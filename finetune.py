@@ -25,20 +25,25 @@ from permutations import (
 )
 from validate import translate_tokenized_mixture_of_bitexts, evaluate_translations
 
-
+# memory things
 def cleanup():
     gc.collect()
     torch.cuda.empty_cache()
 
-
+# prepare model for training according to experiment specifications
 def prepare_model(base_model: str, freeze_decoder: bool, freeze_encoder: bool, should_finetune: bool):
+
+  # loading pretrained model for us to finetune
     if should_finetune:
         model = AutoModelForSeq2SeqLM.from_pretrained(base_model) 
         print('loaded pretrained model')
+
+    # loads model architecture and random weights
     else: 
         model_config = AutoConfig.from_pretrained(base_model)
         model = AutoModelForSeq2SeqLM.from_config(model_config)
         print('loaded architecture only')
+
     if hasattr(model.config, "max_length"):  # this should be in a GenerationConfig
         delattr(model.config, "max_length")
     if freeze_decoder:
@@ -58,7 +63,7 @@ def prepare_model(base_model: str, freeze_decoder: bool, freeze_encoder: bool, s
         model.cuda()
     return model
 
-
+# returns average loss across batches
 def evaluate(model, dev_data, batches: int = 100):
     model.eval()
     dev_losses = []
@@ -71,7 +76,7 @@ def evaluate(model, dev_data, batches: int = 100):
             dev_losses.append(loss.item())
     return np.mean(dev_losses)
 
-
+# makes dev and training graph
 def plot_losses(train_x, train_y, dev_x, dev_y, out_path: str):
     plt.clf()
     plt.plot(train_x, train_y, label="train", color="blue", linewidth=2)
@@ -82,7 +87,7 @@ def plot_losses(train_x, train_y, dev_x, dev_y, out_path: str):
     plt.grid(True)
     plt.savefig(out_path)
 
-
+# training setup + training loop
 def finetune(
     train_data,
     dev_data,
@@ -125,6 +130,7 @@ def finetune(
     dev_plot_x, dev_plot_y = [], []
     best_dev_loss, steps_since_best = None, 0
 
+    # training loop!
     for i in tqdm(range(training_steps)):
         try:
             model.train()
@@ -147,6 +153,7 @@ def finetune(
             else:
                 raise e
 
+        # calculating training loss since last report-every
         if i > 0 and i % report_every == 0:
             avg_train_loss = np.mean(train_losses[-report_every:])
             print(f"Step {i} (train): {avg_train_loss:.4f}")
@@ -154,7 +161,9 @@ def finetune(
             train_plot_y.append(avg_train_loss)
             sys.stdout.flush()
 
+        # validating (after specific num steps)
         if i > 0 and i % validate_every == 0:
+            # start by calculating dev loss
             print("Validating...")
             dev_loss = evaluate(model, dev_data)
             print(f"Dev loss: {dev_loss:.4f}")
@@ -162,6 +171,7 @@ def finetune(
             dev_plot_y.append(dev_loss)
             sys.stdout.flush()
 
+            # graph loss
             plot_losses(
                 train_plot_x,
                 train_plot_y,
@@ -170,11 +180,14 @@ def finetune(
                 os.path.join(model_dir, "training.png"),
             )
 
+            # achieved new lower dev loss -> save best model
             if best_dev_loss is None or dev_loss < best_dev_loss:
                 print("Saving new best model.")
                 best_dev_loss = dev_loss
                 steps_since_best = 0
                 model.save_pretrained(model_dir)  # causes warning?
+
+            # dev loss didn't improve -> early stopping if happened enough times
             else:
                 steps_since_best += 1
                 print(f"No improvement. Patience: {patience - steps_since_best}")
@@ -212,6 +225,7 @@ def main():
             lang_codes[(corpus, key)] = config['corpora'][corpus][key]['lang_code']
     
 
+    # get training and dev corpora
     train_data = MixtureOfBitexts.create_from_config(config, "train", only_once_thru=False)    
     dev_data = MixtureOfBitexts.create_from_config(config, "dev", only_once_thru=False)
     model_name = params["base_model"]
@@ -233,6 +247,8 @@ def main():
                 pmap[(corpus, language)] = permutations[permutation_index]
         
     save_permutation_map(pmap, Path(model_dir) / "permutations.json")
+
+    # tokenize training and dev data
     tokenized_train = TokenizedMixtureOfBitexts(
         train_data, tokenizer, max_length=128, lang_codes=lang_codes, permutation_map=pmap
     )
@@ -247,9 +263,11 @@ def main():
         params['num_steps'],
         freeze_decoder=params['freeze_decoder'] if 'freeze_decoder' in params else False,
         freeze_encoder=params['freeze_encoder'] if 'freeze_encoder' in params else False,        
-        should_finetune=should_finetune
+        should_finetune=should_finetune,
+        patience=100000
     )
 
+    # evaluation: tokenize test data and predict translations
     test_data = MixtureOfBitexts.create_from_config(config, "test", only_once_thru=True)    
     tokenized_test = TokenizedMixtureOfBitexts(test_data, tokenizer, max_length=128, lang_codes=lang_codes, permutation_map=pmap)
     model = AutoModelForSeq2SeqLM.from_pretrained(model_dir)
@@ -262,6 +280,7 @@ def main():
         json.dump(translations, writer)
     print("Translations complete.")
 
+    # evaluation: package reference sentences nicely across all examples
     test_data = MixtureOfBitexts.create_from_config(config, "test", only_once_thru=True)    
     references = dict()
     batch = test_data.next_batch()
@@ -278,6 +297,7 @@ def main():
         json.dump(references, writer)
     print("References complete.")
 
+    # evaluation: evaluate model's translations and write scores
     scores = dict()
     for key in translations:
         scores[key] = evaluate_translations(translations[key], references[key])
