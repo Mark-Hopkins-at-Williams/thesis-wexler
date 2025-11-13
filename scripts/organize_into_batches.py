@@ -37,7 +37,7 @@ def reorganize(batch_size, root_dir, split, output_dir):
     model_name = "facebook/nllb-200-distilled-600M"
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     lengths = []
-    with open(root_dir / f"{split}.en") as reader:
+    with open(root_dir / f"{split}.eng") as reader:
         for i, line in tqdm(enumerate(reader)):
             line = line.strip()
             tokens = tokenizer(line)["input_ids"]
