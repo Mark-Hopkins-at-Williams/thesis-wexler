@@ -18,47 +18,63 @@ from transformers import (
     get_constant_schedule_with_warmup,
 )
 from configure import USE_CUDA
-from corpora import MixtureOfBitexts, TokenizedMixtureOfBitexts, load_tokenizer
+from corpora import MixtureOfBitexts, TokenizedMixtureOfBitexts
 from permutations import (
     create_random_permutation_with_fixed_points,
     save_permutation_map,
 )
 from validate import translate_tokenized_mixture_of_bitexts, evaluate_translations
+from tokenization import NllbTokenizer, HuggingfaceTokenizer, CharacterTokenizer
+
+# print method to avoid timing issues
+def logger(location, text):
+  if location == "err":
+    sys.stderr.write(f"{text}\n")
+    sys.stderr.flush()
+  else:
+    sys.stdout.write(f"{text}\n")
+    sys.stdout.flush()
 
 
+# memory things
 def cleanup():
     gc.collect()
     torch.cuda.empty_cache()
 
-
+# prepare model for training according to experiment specifications
 def prepare_model(base_model: str, freeze_decoder: bool, freeze_encoder: bool, should_finetune: bool):
+
+  # loading pretrained model for us to finetune
     if should_finetune:
         model = AutoModelForSeq2SeqLM.from_pretrained(base_model) 
-        print('loaded pretrained model')
+        logger("out", 'loaded pretrained model')
+
+    # loads model architecture and random weights
     else: 
         model_config = AutoConfig.from_pretrained(base_model)
         model = AutoModelForSeq2SeqLM.from_config(model_config)
-        print('loaded architecture only')
+        logger("out", 'loaded architecture only')
+
     if hasattr(model.config, "max_length"):  # this should be in a GenerationConfig
         delattr(model.config, "max_length")
     if freeze_decoder:
-        print("--> DECODER FROZEN <--")
+        logger("out", "--> DECODER FROZEN <--")
         for param in model.get_decoder().parameters():
             param.requires_grad = False
     else:
-        print("--> decoder NOT frozen <--")
+        logger("out", "--> decoder NOT frozen <--")
     if freeze_encoder:
-        print("--> ENCODER FROZEN <--")
+        logger("out", "--> ENCODER FROZEN <--")
         for param in model.get_encoder().parameters():
             param.requires_grad = False
     else:
-        print("--> encoder NOT frozen <--")
+        logger("out", "--> encoder NOT frozen <--")
     if USE_CUDA:
         torch.cuda.set_device(0)
         model.cuda()
     return model
 
-
+# returns average loss across batches
 def evaluate(model, dev_data, batches: int = 100):
     model.eval()
     dev_losses = []
@@ -71,7 +87,7 @@ def evaluate(model, dev_data, batches: int = 100):
             dev_losses.append(loss.item())
     return np.mean(dev_losses)
 
-
+# makes dev and training graph
 def plot_losses(train_x, train_y, dev_x, dev_y, out_path: str):
     plt.clf()
     plt.plot(train_x, train_y, label="train", color="blue", linewidth=2)
@@ -82,22 +98,26 @@ def plot_losses(train_x, train_y, dev_x, dev_y, out_path: str):
     plt.grid(True)
     plt.savefig(out_path)
 
-
+# training setup + training loop
 def finetune(
     train_data,
     dev_data,
+    tokenizer_len,
     base_model: str,
     model_dir: str,
     training_steps: int,
-    report_every: int = 500,
-    validate_every: int = 500,
-    patience: int = 5,
+    report_every: int,
+    validate_every: int,
+    patience: int,
     freeze_decoder: bool = False,
     freeze_encoder: bool = False,
     should_finetune: bool = True
 ):
-    print(f"Training {model_dir}")
+    logger("out", f"Training {model_dir}")
     model = prepare_model(base_model, freeze_decoder, freeze_encoder, should_finetune)
+
+    # resize embeddings matrix (add embeddings from new lang codes)
+    model.resize_token_embeddings(tokenizer_len) 
     
     if should_finetune:
         optimizer = Adafactor(
@@ -125,6 +145,7 @@ def finetune(
     dev_plot_x, dev_plot_y = [], []
     best_dev_loss, steps_since_best = None, 0
 
+    # training loop!
     for i in tqdm(range(training_steps)):
         try:
             model.train()
@@ -140,28 +161,32 @@ def finetune(
                 scheduler.step()
         except RuntimeError as e:
             if "out of memory" in str(e):
-                print("GPU OOM. Cleaning up.")
+                logger("out", "GPU OOM. Cleaning up.")
                 optimizer.zero_grad(set_to_none=True)
                 cleanup()
                 continue
             else:
                 raise e
 
+        # calculating training loss since last report-every
         if i > 0 and i % report_every == 0:
             avg_train_loss = np.mean(train_losses[-report_every:])
-            print(f"Step {i} (train): {avg_train_loss:.4f}")
+            logger("out", f"Step {i} (train): {avg_train_loss:.4f}")
             train_plot_x.append(i)
             train_plot_y.append(avg_train_loss)
             sys.stdout.flush()
 
+        # validating (after specific num steps)
         if i > 0 and i % validate_every == 0:
-            print("Validating...")
+            # start by calculating dev loss
+            logger("out", "Validating...")
             dev_loss = evaluate(model, dev_data)
-            print(f"Dev loss: {dev_loss:.4f}")
+            logger("out", f"Dev loss: {dev_loss:.4f}")
             dev_plot_x.append(i)
             dev_plot_y.append(dev_loss)
             sys.stdout.flush()
 
+            # graph loss
             plot_losses(
                 train_plot_x,
                 train_plot_y,
@@ -170,16 +195,19 @@ def finetune(
                 os.path.join(model_dir, "training.png"),
             )
 
+            # achieved new lower dev loss -> save best model
             if best_dev_loss is None or dev_loss < best_dev_loss:
-                print("Saving new best model.")
+                logger("out", "Saving new best model.")
                 best_dev_loss = dev_loss
                 steps_since_best = 0
                 model.save_pretrained(model_dir)  # causes warning?
+
+            # dev loss didn't improve -> early stopping if happened enough times
             else:
                 steps_since_best += 1
-                print(f"No improvement. Patience: {patience - steps_since_best}")
+                logger("out", f"No improvement. Patience: {patience - steps_since_best}")
                 if steps_since_best >= patience:
-                    print("Early stopping.")
+                    logger("out", "Early stopping.")
                     break
 
 
@@ -196,6 +224,9 @@ def main():
     all_corpora = config["corpora"]
     params = config["finetuning_parameters"]
     should_finetune = params["finetune"] if "finetune" in params else True
+    report_every = params["report_every"] if "report_every" in params else 500
+    validate_every = params["validate_every"] if "validate_every" in params else 500
+    patience = params["patience"] if "patience" else 1000000000
     
     # Create unique model directory
     base_dir = config["model_dir"]
@@ -212,11 +243,18 @@ def main():
             lang_codes[(corpus, key)] = config['corpora'][corpus][key]['lang_code']
     
 
+    # get training and dev corpora
     train_data = MixtureOfBitexts.create_from_config(config, "train", only_once_thru=False)    
     dev_data = MixtureOfBitexts.create_from_config(config, "dev", only_once_thru=False)
     model_name = params["base_model"]
-    tokenizer = load_tokenizer(model_name)
-
+    tokenizer = CharacterTokenizer(max_length=128)
+    # if model_name == "facebook/nllb-200-distilled-600M":   
+    #     tokenizer = NllbTokenizer("600M", max_length=128) # set max length?
+    # elif model_name == "facebook/nllb-200-distilled-1.3B": 
+    #     tokenizer = NllbTokenizer("1.3B", max_length=128)
+    # else:
+    #     tokenizer = HuggingfaceTokenizer(model_name, max_length=128)
+        
     # Create the permutations
     permutations = dict()
     pmap = dict()
@@ -227,31 +265,39 @@ def main():
                 if permutation_index not in permutations:
                     permutations[permutation_index] = (
                         create_random_permutation_with_fixed_points(
-                            len(tokenizer), tokenizer.all_special_ids
+                            len(tokenizer), list(tokenizer.get_special_tokens().values())
                         )
                     )
                 pmap[(corpus, language)] = permutations[permutation_index]
         
     save_permutation_map(pmap, Path(model_dir) / "permutations.json")
+
+    # tokenize training and dev data
     tokenized_train = TokenizedMixtureOfBitexts(
-        train_data, tokenizer, max_length=128, lang_codes=lang_codes, permutation_map=pmap
+        train_data, tokenizer, lang_codes=lang_codes, permutation_map=pmap
     )
     tokenized_dev = TokenizedMixtureOfBitexts(
-        dev_data, tokenizer, max_length=128, lang_codes=lang_codes, permutation_map=pmap
+        dev_data, tokenizer, lang_codes=lang_codes, permutation_map=pmap
     )
     finetune(
         tokenized_train,
         tokenized_dev,
+        len(tokenizer),
         model_name,
         model_dir,
         params['num_steps'],
         freeze_decoder=params['freeze_decoder'] if 'freeze_decoder' in params else False,
         freeze_encoder=params['freeze_encoder'] if 'freeze_encoder' in params else False,        
-        should_finetune=should_finetune
+        should_finetune=should_finetune,
+        report_every=report_every,
+        validate_every=validate_every,
+        patience=1000000
     )
 
+    # evaluation: tokenize test data and predict translations
+    logger("out", "Training complete. Entering evaluation.")
     test_data = MixtureOfBitexts.create_from_config(config, "test", only_once_thru=True)    
-    tokenized_test = TokenizedMixtureOfBitexts(test_data, tokenizer, max_length=128, lang_codes=lang_codes, permutation_map=pmap)
+    tokenized_test = TokenizedMixtureOfBitexts(test_data, tokenizer, lang_codes=lang_codes, permutation_map=pmap)
     model = AutoModelForSeq2SeqLM.from_pretrained(model_dir)
     if USE_CUDA:
         model.cuda()
@@ -260,8 +306,9 @@ def main():
     )
     with open(Path(model_dir) / "translations.json", "w") as writer:
         json.dump(translations, writer)
-    print("Translations complete.")
+    logger("out", "Translations complete.")
 
+    # evaluation: package reference sentences nicely across all examples
     test_data = MixtureOfBitexts.create_from_config(config, "test", only_once_thru=True)    
     references = dict()
     batch = test_data.next_batch()
@@ -276,14 +323,15 @@ def main():
         batch = test_data.next_batch()
     with open(Path(model_dir) / "references.json", "w") as writer:
         json.dump(references, writer)
-    print("References complete.")
+    logger("out", "References complete.")
 
+    # evaluation: evaluate model's translations and write scores
     scores = dict()
     for key in translations:
         scores[key] = evaluate_translations(translations[key], references[key])
     with open(Path(model_dir) / "scores.json", "w") as writer:
         json.dump(scores, writer)
-    print("Evaluation complete.")
+    logger("out", "Evaluation complete.")
 
 
 if __name__ == "__main__":
