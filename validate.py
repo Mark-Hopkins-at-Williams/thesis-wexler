@@ -20,7 +20,7 @@ def translate(
     model.eval()
     result = model.generate(
         **src_tokenized.to(model.device),
-        forced_bos_token_id=tokenizer.get_special_tokens()[tgt_lang],
+        forced_bos_token_id=tokenizer.get_special_tokens()[tgt_lang], # in tgt lang's tokenizer
         max_new_tokens=int(a + b * src_tokenized.input_ids.shape[1]),
         num_beams=num_beams,
         **kwargs
@@ -28,7 +28,7 @@ def translate(
     result = result.to('cpu')
     if permutation is not None:
         result.apply_(permutation.get_inverse())
-    return tokenizer.batch_decode(result)
+    return tokenizer.batch_decode(result) # in tgt lang's tokenizer
 
 
 def translate_tokenized_mixture_of_bitexts(mix, model, tokenizer, lang_codes, pmap):         
@@ -44,7 +44,7 @@ def translate_tokenized_mixture_of_bitexts(mix, model, tokenizer, lang_codes, pm
         key = '->'.join([src_code, tgt_code])
         if key not in translations:
             translations[key] = []
-        translated = translate(src, tokenizer, model, tgt_code, permutation)
+        translated = translate(src, tokenizer, model, tgt_code, permutation) # tgt lang's tokenizer
         translations[key].extend(translated)
         batch = mix.next_batch() 
     return translations

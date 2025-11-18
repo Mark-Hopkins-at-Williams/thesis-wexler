@@ -247,13 +247,13 @@ def main():
     train_data = MixtureOfBitexts.create_from_config(config, "train", only_once_thru=False)    
     dev_data = MixtureOfBitexts.create_from_config(config, "dev", only_once_thru=False)
     model_name = params["base_model"]
-    tokenizer = CharacterTokenizer(max_length=128)
-    # if model_name == "facebook/nllb-200-distilled-600M":   
-    #     tokenizer = NllbTokenizer("600M", max_length=128) # set max length?
-    # elif model_name == "facebook/nllb-200-distilled-1.3B": 
-    #     tokenizer = NllbTokenizer("1.3B", max_length=128)
-    # else:
-    #     tokenizer = HuggingfaceTokenizer(model_name, max_length=128)
+    src_tokenizer = CharacterTokenizer(max_length=128)
+    if model_name == "facebook/nllb-200-distilled-600M":   
+        tgt_tokenizer = NllbTokenizer("600M", max_length=128) # set max length?
+    elif model_name == "facebook/nllb-200-distilled-1.3B": 
+        tgt_tokenizer = NllbTokenizer("1.3B", max_length=128)
+    else:
+        tgt_tokenizer = HuggingfaceTokenizer(model_name, max_length=128)
         
     # Create the permutations
     permutations = dict()
@@ -265,7 +265,7 @@ def main():
                 if permutation_index not in permutations:
                     permutations[permutation_index] = (
                         create_random_permutation_with_fixed_points(
-                            len(tokenizer), list(tokenizer.get_special_tokens().values())
+                            len(src_tokenizer), list(src_tokenizer.get_special_tokens().values())
                         )
                     )
                 pmap[(corpus, language)] = permutations[permutation_index]
@@ -274,15 +274,18 @@ def main():
 
     # tokenize training and dev data
     tokenized_train = TokenizedMixtureOfBitexts(
-        train_data, tokenizer, lang_codes=lang_codes, permutation_map=pmap
+        train_data, src_tokenizer, tgt_tokenizer, lang_codes=lang_codes, permutation_map=pmap
     )
     tokenized_dev = TokenizedMixtureOfBitexts(
-        dev_data, tokenizer, lang_codes=lang_codes, permutation_map=pmap
+        dev_data, src_tokenizer, tgt_tokenizer, lang_codes=lang_codes, permutation_map=pmap
     )
+    
+    tokenizer_len = max(len(src_tokenizer), len(tgt_tokenizer))
+
     finetune(
         tokenized_train,
         tokenized_dev,
-        len(tokenizer),
+        tokenizer_len,
         model_name,
         model_dir,
         params['num_steps'],
@@ -297,12 +300,12 @@ def main():
     # evaluation: tokenize test data and predict translations
     logger("out", "Training complete. Entering evaluation.")
     test_data = MixtureOfBitexts.create_from_config(config, "test", only_once_thru=True)    
-    tokenized_test = TokenizedMixtureOfBitexts(test_data, tokenizer, lang_codes=lang_codes, permutation_map=pmap)
+    tokenized_test = TokenizedMixtureOfBitexts(test_data, src_tokenizer, tgt_tokenizer, lang_codes=lang_codes, permutation_map=pmap)
     model = AutoModelForSeq2SeqLM.from_pretrained(model_dir)
     if USE_CUDA:
         model.cuda()
     translations = translate_tokenized_mixture_of_bitexts(
-        tokenized_test, model, tokenizer, lang_codes, pmap
+        tokenized_test, model, tgt_tokenizer, lang_codes, pmap
     )
     with open(Path(model_dir) / "translations.json", "w") as writer:
         json.dump(translations, writer)

@@ -2,7 +2,7 @@ import json
 import unittest
 from corpora import Bitext, MultifileBitext, MixtureOfBitexts, TokenizedMixtureOfBitexts
 from torch import tensor
-from tokenization import NllbTokenizer
+from tokenization import NllbTokenizer, CharacterTokenizer
 
 
 class TestUtil(unittest.TestCase):
@@ -275,8 +275,9 @@ class TestUtil(unittest.TestCase):
         mix = MixtureOfBitexts.create_from_files(
             text_files, [(("test", "eng"), ("test", "fra"), None)], 3
         )
-        tokenizer = NllbTokenizer("600M")
-        tmob = TokenizedMixtureOfBitexts(mix, tokenizer, lang_codes=lang_codes)
+        src_tokenizer = NllbTokenizer("600M")
+        tgt_tokenizer = NllbTokenizer("600M")
+        tmob = TokenizedMixtureOfBitexts(mix, src_tokenizer, tgt_tokenizer, lang_codes=lang_codes)
         lang1_batch, lang2_batch, _, _ = tmob.next_batch()
         expected_lang1_token_ids = tensor(
             [
@@ -319,6 +320,64 @@ class TestUtil(unittest.TestCase):
             lang2_batch["attention_mask"].tolist(), expected_lang2_mask.tolist()
         )
 
+
+    def test_tokenized_mixture_of_bitexts_different_tokenizers(self):
+          text_files = {
+              ("test", "eng"): "test_files/lang1.txt",
+              ("test", "fra"): "test_files/lang2.txt",
+          }
+          lang_codes = {("test", "eng"): "eng_Latn", ("test", "fra"): "fra_Latn"}
+          mix = MixtureOfBitexts.create_from_files(
+              text_files, [(("test", "eng"), ("test", "fra"), None)], 3
+          )
+          src_tokenizer = CharacterTokenizer()
+          tgt_tokenizer = NllbTokenizer("600M")
+          tmob = TokenizedMixtureOfBitexts(mix, src_tokenizer, tgt_tokenizer, lang_codes=lang_codes)
+          lang1_batch, lang2_batch, _, _ = tmob.next_batch()
+          expected_lang1_token_ids = tensor(
+              [
+                  [  5,  62,  24,  21, 108,  19,  17,  36, 108,  19,  24,  17,  35,  21, 20, 108,  36,  24,  21, 108,  29,  31,  37,  35,  21,  82,   1],
+                  [  5,  61,  24,  21, 108,  34,  21,  17,  20,  35, 108,  17, 108,  18, 31,  31,  27,  82,   1,   3,   3,   3,   3,   3,   3,   3,   3],
+                  [  5,  62,  24,  21,  41, 108,  32,  28,  17,  41, 108,  35,  31,  19, 19,  21,  34,  82,   1,   3,   3,   3,   3,   3,   3,   3,   3]
+              ]
+          )
+          expected_lang2_token_ids = tensor(
+              [
+                  [256057, 1181, 32779, 9, 170684, 356, 82, 324, 40284, 248075, 2],
+                  [256057, 19945, 6622, 159, 68078, 248075, 2, -100, -100, -100, -100],
+                  [256057, 21422, 5665, 138, 1166, 96236, 248075, 2, -100, -100, -100],
+              ]
+          )
+          expected_lang1_mask = tensor(
+              [
+                  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+                  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0]
+              ]
+          )
+          expected_lang2_mask = tensor(
+              [
+                  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                  [1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0],
+                  [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0],
+              ]
+          )
+          self.assertEqual(
+              lang1_batch["input_ids"].tolist(), expected_lang1_token_ids.tolist()
+          )
+          self.assertEqual(
+              lang2_batch["input_ids"].tolist(), expected_lang2_token_ids.tolist()
+          )
+          self.assertEqual(
+              lang1_batch["attention_mask"].tolist(), expected_lang1_mask.tolist()
+          )
+          self.assertEqual(
+              lang2_batch["attention_mask"].tolist(), expected_lang2_mask.tolist()
+          )
+
+
+
+
     def test_tokenized_mixture_of_bitexts_truncated(self):
         text_files = {
             ("test", "eng"): "test_files/lang1.txt",
@@ -328,8 +387,9 @@ class TestUtil(unittest.TestCase):
         mix = MixtureOfBitexts.create_from_files(
             text_files, [(("test", "eng"), ("test", "fra"), None)], 3
         )
-        tokenizer = NllbTokenizer("600M", max_length=8)
-        tmob = TokenizedMixtureOfBitexts(mix, tokenizer, lang_codes=lang_codes)
+        src_tokenizer = NllbTokenizer("600M", max_length=8)
+        tgt_tokenizer = NllbTokenizer("600M", max_length=8)
+        tmob = TokenizedMixtureOfBitexts(mix, src_tokenizer, tgt_tokenizer, lang_codes=lang_codes)
         lang1_batch, lang2_batch, _, _ = tmob.next_batch()
         expected_lang1_token_ids = tensor(
             [
@@ -381,10 +441,11 @@ class TestUtil(unittest.TestCase):
         mix = MixtureOfBitexts.create_from_files(
             text_files, [(("test", "eng"), ("test", "fra"), None)], 3
         )
-        tokenizer = NllbTokenizer("600M")
+        src_tokenizer = NllbTokenizer("600M")
+        tgt_tokenizer = NllbTokenizer("600M")
         pmap = {("test", "eng"): lambda x: x + 1, ("test", "fra"): lambda x: x + 2}
         tmob = TokenizedMixtureOfBitexts(
-            mix, tokenizer, lang_codes=lang_codes, permutation_map=pmap
+            mix, src_tokenizer, tgt_tokenizer, lang_codes=lang_codes, permutation_map=pmap
         )
         lang1_batch, lang2_batch, _, _ = tmob.next_batch()
         expected_lang1_token_ids = tensor(
