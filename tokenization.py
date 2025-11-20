@@ -30,7 +30,7 @@ class Tokenizer(ABC):
 
 class CharacterTokenizer(Tokenizer):
 
-    def __init__(self, max_length=None):
+    def __init__(self, max_length=None, offset = 0):
       # define full vocabulary for eng-fra
       self.beg_token = "<bos>"
       self.end_token = "<eos>"
@@ -56,7 +56,7 @@ class CharacterTokenizer(Tokenizer):
       # assign and store ID for each token (+ reverse)
       self.mappings = {} # char -> ID
       self.reverse_mappings = {} # ID -> char
-      i = 0
+      i = offset
       for char in self.vocab:
         self.mappings[char] = i
         i = i+1 

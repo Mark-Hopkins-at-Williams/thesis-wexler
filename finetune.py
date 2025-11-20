@@ -247,13 +247,14 @@ def main():
     train_data = MixtureOfBitexts.create_from_config(config, "train", only_once_thru=False)    
     dev_data = MixtureOfBitexts.create_from_config(config, "dev", only_once_thru=False)
     model_name = params["base_model"]
-    src_tokenizer = CharacterTokenizer(max_length=128)
+    
     if model_name == "facebook/nllb-200-distilled-600M":   
         tgt_tokenizer = NllbTokenizer("600M", max_length=128) # set max length?
     elif model_name == "facebook/nllb-200-distilled-1.3B": 
         tgt_tokenizer = NllbTokenizer("1.3B", max_length=128)
     else:
         tgt_tokenizer = HuggingfaceTokenizer(model_name, max_length=128)
+    src_tokenizer = CharacterTokenizer(max_length=128, offset=len(tgt_tokenizer))
         
     # Create the permutations
     permutations = dict()
@@ -280,7 +281,7 @@ def main():
         dev_data, src_tokenizer, tgt_tokenizer, lang_codes=lang_codes, permutation_map=pmap
     )
     
-    tokenizer_len = max(len(src_tokenizer), len(tgt_tokenizer))
+    tokenizer_len = len(src_tokenizer) + len(tgt_tokenizer)
 
     finetune(
         tokenized_train,
