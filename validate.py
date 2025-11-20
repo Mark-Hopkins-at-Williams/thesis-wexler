@@ -31,7 +31,7 @@ def translate(
     return tokenizer.batch_decode(result) # in tgt lang's tokenizer
 
 
-def translate_tokenized_mixture_of_bitexts(mix, model, tokenizer, lang_codes, pmap):         
+def translate_tokenized_mixture_of_bitexts(mix, model, tokenizer, lang_codes, pmap=dict()):         
     if USE_CUDA:
         model.cuda()
     batch = mix.next_batch()  
