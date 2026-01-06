@@ -4,7 +4,7 @@ from torch import tensor
 
 
 class TestTokenization(unittest.TestCase):
-    
+
     def test_tokenized_mixture_of_bitexts(self):
         with open("test_files/lang1.txt") as reader:
             lines = [line.strip() for line in reader.readlines()]
@@ -29,7 +29,7 @@ class TestTokenization(unittest.TestCase):
         )
         self.assertEqual(
             tokens["attention_mask"].tolist(), expected_lang1_mask.tolist()
-        )        
+        )
 
     def test_tokenized_mixture_of_bitexts_truncated(self):
         with open("test_files/lang1.txt") as reader:
@@ -52,21 +52,21 @@ class TestTokenization(unittest.TestCase):
         )
         self.assertEqual(
             tokens["input_ids"].tolist(), expected_lang1_token_ids.tolist()
-        )        
+        )
         self.assertEqual(
             tokens["attention_mask"].tolist(), expected_lang1_mask.tolist()
-        )        
-        
+        )
+
     def test_hf_tokenizer_properties(self):
         tokenizer = NllbTokenizer("1.3B", max_length=8)
         self.assertEqual(len(tokenizer), 256204)
         special_tokens = tokenizer.get_special_tokens()
         self.assertEqual(len(special_tokens), 207)
-        self.assertEqual(special_tokens['<s>'], 0)
-        self.assertEqual(special_tokens['<pad>'], 1)
-        self.assertEqual(special_tokens['</s>'], 2)
-        self.assertEqual(special_tokens['<unk>'], 3)
-        self.assertEqual(special_tokens['<mask>'], 256203)
+        self.assertEqual(special_tokens["<s>"], 0)
+        self.assertEqual(special_tokens["<pad>"], 1)
+        self.assertEqual(special_tokens["</s>"], 2)
+        self.assertEqual(special_tokens["<unk>"], 3)
+        self.assertEqual(special_tokens["<mask>"], 256203)
 
 
 if __name__ == "__main__":

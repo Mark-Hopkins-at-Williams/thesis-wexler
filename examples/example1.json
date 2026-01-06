@@ -9,7 +9,7 @@
         "validate_every": 50,
         "patience": 5,
         "batch_size": 32,
-        "num_steps": 100
+        "num_steps": 200
     },
     "corpora": {
         "europarl": {
