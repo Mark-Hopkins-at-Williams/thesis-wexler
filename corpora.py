@@ -180,10 +180,16 @@ class TokenizedMixtureOfBitexts:
         self.permutation_map = permutation_map
         self.use_alt_pad_token_for_tgt_lang = use_alt_pad_token_for_tgt_lang
 
-    def _tokenize(self, sents: List[str], corpus: CorpusId, alt_pad_token: int = None):
-        tokens = self.tokenizer(sents, lang_code=self.lang_codes[corpus])
+    def _tokenize(
+        self,
+        sents: List[str],
+        corpus: CorpusId,
+        tokenizer: Tokenizer,
+        alt_pad_token: int = None,
+    ):
+        tokens = tokenizer(sents, lang_code=self.lang_codes[corpus])
         if alt_pad_token is not None:
-            pad_token_id = self.tokenizer.get_special_tokens()["<pad>"]
+            pad_token_id = tokenizer.get_special_tokens()["<pad>"]
             tokens.input_ids[tokens.input_ids == pad_token_id] = alt_pad_token
         if corpus in self.permutation_map:  # apply the permutation
             p = self.permutation_map[corpus]
@@ -195,9 +201,11 @@ class TokenizedMixtureOfBitexts:
         if batch is None:
             return None
         lang1_sents, lang2_sents, lang1, lang2 = batch
-        lang1_tokenized = self._tokenize(lang1_sents, lang1)
+        lang1_tokenized = self._tokenize(lang1_sents, lang1, self.src_tokenizer)
         if self.use_alt_pad_token_for_tgt_lang:
-            lang2_tokenized = self._tokenize(lang2_sents, lang2, alt_pad_token=-100)
+            lang2_tokenized = self._tokenize(
+                lang2_sents, lang2, self.tgt_tokenizer, alt_pad_token=-100
+            )
         else:
-            lang2_tokenized = self._tokenize(lang2_sents, lang2)
+            lang2_tokenized = self._tokenize(lang2_sents, lang2, self.tgt_tokenizer)
         return lang1_tokenized, lang2_tokenized, lang1, lang2

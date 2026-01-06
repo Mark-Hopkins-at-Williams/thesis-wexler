@@ -5,12 +5,16 @@ import os
 from pathlib import Path
 from permutations import create_random_permutation_with_fixed_points
 import shutil
-from tokenization import NllbTokenizer, HuggingfaceTokenizer
+from tokenization import NllbTokenizer, HuggingfaceTokenizer, CharacterTokenizer
 
 
 @dataclass
 class FinetuningParameters:
     base_model: str
+    src_tokenizer: str
+    tgt_tokenizer: str
+    max_src_length: int
+    max_tgt_length: int
     should_finetune: bool
     report_every: int
     validate_every: int
@@ -29,6 +33,10 @@ def read_finetuning_params(config):
     params = config["finetuning_parameters"]
     f_params = FinetuningParameters(
         base_model=params["base_model"],
+        src_tokenizer=params.get("src_tokenizer", "default"),
+        tgt_tokenizer=params.get("tgt_tokenizer", "default"),
+        max_src_length=params.get("max_src_length", 128),
+        max_tgt_length=params.get("max_tgt_length", 128),
         should_finetune=params.get("finetune", True),
         report_every=params.get("report_every", 500),
         validate_every=params.get("validate_every", 500),
@@ -65,17 +73,39 @@ def harvest_language_codes(config):
     return lang_codes
 
 
-def initialize_tokenizer(config):
-    # TODO: generalize to separate src/tgt tokenizers
-    params = config["finetuning_parameters"]
-    model_name = params["base_model"]
-    if model_name == "facebook/nllb-200-distilled-600M":
-        tokenizer = NllbTokenizer("600M", max_length=128)  # set max length?
-    elif model_name == "facebook/nllb-200-distilled-1.3B":
-        tokenizer = NllbTokenizer("1.3B", max_length=128)
-    else:
-        tokenizer = HuggingfaceTokenizer(model_name, max_length=128)
-    return tokenizer
+def initialize_tokenizers(ft_params):  # TODO: update to use FinetuningParameters object
+    tokenizer_types = set(
+        [
+            (ft_params.src_tokenizer, ft_params.max_src_length),
+            (ft_params.tgt_tokenizer, ft_params.max_tgt_length),
+        ]
+    )
+    offset = 0
+    tokenizers = dict()
+    for tokenizer_type, max_length in tokenizer_types:
+        if tokenizer_type == "default":
+            model_name = ft_params.base_model
+            if model_name == "facebook/nllb-200-distilled-600M":
+                tokenizers[(tokenizer_type, max_length)] = NllbTokenizer(
+                    "600M", max_length=max_length
+                )
+            elif model_name == "facebook/nllb-200-distilled-1.3B":
+                tokenizers[(tokenizer_type, max_length)] = NllbTokenizer(
+                    "1.3B", max_length=max_length
+                )
+            else:
+                tokenizers[(tokenizer_type, max_length)] = HuggingfaceTokenizer(
+                    model_name, max_length=max_length
+                )
+            offset = len(tokenizers[(tokenizer_type, max_length)])
+    for tokenizer_type, max_length in tokenizer_types:
+        if tokenizer_type == "character":
+            tokenizers[(tokenizer_type, max_length)] = CharacterTokenizer(
+                max_length=max_length, offset=offset
+            )
+    src_tokenizer = tokenizers[(ft_params.src_tokenizer, ft_params.max_src_length)]
+    tgt_tokenizer = tokenizers[(ft_params.tgt_tokenizer, ft_params.max_tgt_length)]
+    return src_tokenizer, tgt_tokenizer
 
 
 def create_permutations(config, tokenizer):

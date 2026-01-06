@@ -2,7 +2,7 @@ import argparse
 from configure import create_experiment_dir
 from configure import create_permutations
 from configure import harvest_language_codes
-from configure import initialize_tokenizer
+from configure import initialize_tokenizers
 from configure import read_finetuning_params
 from corpora import MixtureOfBitexts, TokenizedMixtureOfBitexts
 import json
@@ -15,6 +15,7 @@ import numpy as np
 import os
 from pathlib import Path
 from permutations import save_permutation_map
+from tokenization import CharacterTokenizer
 import torch
 from tqdm import tqdm
 from transformers import Adafactor
@@ -177,8 +178,9 @@ def main():
     ft_params = read_finetuning_params(config)
     experiment_dir = create_experiment_dir(config, args.config)
     lang_codes = harvest_language_codes(config)
-    tokenizer = initialize_tokenizer(config)
-    pmap = create_permutations(config, tokenizer)
+    src_tokenizer, tgt_tokenizer = initialize_tokenizers(ft_params)
+
+    pmap = create_permutations(config, src_tokenizer)
     save_permutation_map(pmap, Path(experiment_dir) / "permutations.json")
     train_data = MixtureOfBitexts.create_from_config(
         config, "train", only_once_thru=False
@@ -199,6 +201,8 @@ def main():
         permutation_map=pmap,
     )
     model = prepare_model_for_finetuning(ft_params)
+    # resize embeddings matrix (add embeddings from new lang codes)
+    model.resize_token_embeddings(len(src_tokenizer) + len(tgt_tokenizer))
     finetune(
         model,
         tokenized_train,

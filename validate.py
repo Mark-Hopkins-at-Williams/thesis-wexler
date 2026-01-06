@@ -1,7 +1,8 @@
 import argparse
 from configure import harvest_language_codes
-from configure import initialize_tokenizer
+from configure import initialize_tokenizers
 from configure import USE_CUDA
+from configure import read_finetuning_params
 from corpora import MixtureOfBitexts, TokenizedMixtureOfBitexts
 import evaluate
 import json
@@ -13,7 +14,7 @@ from transformers import AutoModelForSeq2SeqLM
 
 def translate(
     src_tokenized,
-    tokenizer,
+    tgt_tokenizer,
     model,
     tgt_lang,
     permutation=None,
@@ -25,7 +26,7 @@ def translate(
     model.eval()
     result = model.generate(
         **src_tokenized.to(model.device),
-        forced_bos_token_id=tokenizer.get_special_tokens()[
+        forced_bos_token_id=tgt_tokenizer.get_special_tokens()[
             tgt_lang
         ],  # in tgt lang's tokenizer
         max_new_tokens=int(a + b * src_tokenized.input_ids.shape[1]),
@@ -35,11 +36,11 @@ def translate(
     result = result.to("cpu")
     if permutation is not None:
         result.apply_(permutation.get_inverse())
-    return tokenizer.batch_decode(result)  # in tgt lang's tokenizer
+    return tgt_tokenizer.batch_decode(result)  # in tgt lang's tokenizer
 
 
 def translate_tokenized_mixture_of_bitexts(
-    mix, model, tokenizer, lang_codes, pmap=dict()
+    mix, model, tgt_tokenizer, lang_codes, pmap=dict()
 ):
     if USE_CUDA:
         model.cuda()
@@ -54,7 +55,7 @@ def translate_tokenized_mixture_of_bitexts(
         if key not in translations:
             translations[key] = []
         translated = translate(
-            src, tokenizer, model, tgt_code, permutation
+            src, tgt_tokenizer, model, tgt_code, permutation
         )  # tgt lang's tokenizer
         translations[key].extend(translated)
         batch = mix.next_batch()
@@ -82,19 +83,24 @@ def evaluate_experiment(experiment_dir):
     config_file = Path(experiment_dir) / "experiment.json"
     with open(config_file) as reader:
         config = json.load(reader)
+    ft_params = read_finetuning_params(config)
     model = AutoModelForSeq2SeqLM.from_pretrained(experiment_dir)
     if USE_CUDA:
         model.cuda()
     lang_codes = harvest_language_codes(config)
-    tokenizer = initialize_tokenizer(config)
+    src_tokenizer, tgt_tokenizer = initialize_tokenizers(ft_params)
     pmap = load_permutation_map(Path(experiment_dir) / "permutations.json")
     test_data = MixtureOfBitexts.create_from_config(config, "test", only_once_thru=True)
     tokenized_test = TokenizedMixtureOfBitexts(
-        test_data, tokenizer, lang_codes=lang_codes, permutation_map=pmap
+        test_data,
+        src_tokenizer,
+        tgt_tokenizer,
+        lang_codes=lang_codes,
+        permutation_map=pmap,
     )
     logger(f"Translating test data")
     translations = translate_tokenized_mixture_of_bitexts(
-        tokenized_test, model, tokenizer, lang_codes, pmap
+        tokenized_test, model, tgt_tokenizer, lang_codes, pmap
     )
     with open(Path(experiment_dir) / "translations.json", "w") as writer:
         json.dump(translations, writer)
@@ -127,19 +133,24 @@ def evaluate_experiment(experiment_dir):
 def evaluate_model(model_name, config_file):
     with open(config_file) as reader:
         config = json.load(reader)
+    ft_params = read_finetuning_params(config)
     model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
     if USE_CUDA:
         model.cuda()
     lang_codes = harvest_language_codes(config)
-    tokenizer = initialize_tokenizer(config)
+    src_tokenizer, tgt_tokenizer = initialize_tokenizers(ft_params)
     pmap = dict()
     test_data = MixtureOfBitexts.create_from_config(config, "test", only_once_thru=True)
     tokenized_test = TokenizedMixtureOfBitexts(
-        test_data, tokenizer, lang_codes=lang_codes, permutation_map=pmap
+        test_data,
+        src_tokenizer,
+        tgt_tokenizer,
+        lang_codes=lang_codes,
+        permutation_map=pmap,
     )
     logger(f"Translating test data")
     translations = translate_tokenized_mixture_of_bitexts(
-        tokenized_test, model, tokenizer, lang_codes, pmap
+        tokenized_test, model, tgt_tokenizer, lang_codes, pmap
     )
     with open("translations.json", "w") as writer:
         json.dump(translations, writer)
@@ -176,4 +187,4 @@ if __name__ == "__main__":
     # evaluate_experiment(args.dir)
     evaluate_model(
         "facebook/nllb-200-distilled-600M", "examples/nllb_seed_config_small.json"
-    )
+    )  # update this to use the command-line arguments
