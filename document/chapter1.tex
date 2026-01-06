@@ -1,4 +1,69 @@
-\chapter{Related Work}
+\chapter{Introduction}
 
-\section{Transformers}
+\section{Motivation}
+Neural machine translation (NMT) has quadratic time complexity with respect to the input sequence length. As a result, translating longer sentences requires more time and computational power. However, many characters in English words are redundant. Though seemingly necessary, not all characters alter the meaning of a word. For example, consider the pair of sentences “the wmn was running” and “the woman was running”. The first sentence contains a word that is technically not English. However, most humans reading the sentence would be able to deduce who was running based on context and grammar. Can computers make a similar assumption when translating? It is possible that translation systems are wasting computing power on translating characters that do not truly contribute to translation correctness. Finding a way to translate sentences using less resources would have large implications on the ability of low-powered devices to perform the crucial task of translation.
 
+\section{Problem Statement}
+In this thesis, we will determine if shortening the input sequence can still produce viable translations in the target language. Specifically, we will research whether incorporating an autocomplete mechanism can increase the efficiency of NMT. This autocomplete mechanism will reduce each word to the fewest amount of tokens that does not significantly obscure the word’s meaning. Mark and I are curious if the translation of a condensed sentence can be roughly equivalent to the translation of the original sentence, despite a much shorter input sequence. We choose to study English to French translation because I have working fluency in French. By comparing performance drops to efficiency gains, we will determine if translation can feasibly be done for cheaper.  
+
+\section{Related Work}
+Until 2013, Statistical Machine Translation (SMT) was the dominant approach to solving translation problems. Work in Neural Machine Translation began in 2013 with Kalchbrenner and Blunsom’s paper, in which they introduced Recurrent Convolutional Neural Networks to gain a deeper understanding of text \cite{kalchbrenner-blunsom-2013-recurrent-convolutional}. Improvements came quickly: Bahdanau et al. introduced attention to NMT architectures in 2014 \cite{bahdanau2016neuralmachinetranslationjointly}, and in the following year Sennrich et al. proposed a subword approach to solve the out-of-vocabulary problem that plagued past models \cite{sennrich-etal-2016-neural}. In 2017, Vaswani et al. built off Bahdanau et al.’s attention paper by showing recurrency is not necessary to achieve strong performance, meaning NMT can be parallelized \cite{vaswani2023attentionneed}. This approach has led to impressive results, including Devlin et al.’s state-of-the-art BERT model released in 2018 \cite{devlin-etal-2019-bert}. While effort has been devoted to improving the time complexity of self-attention (Zhu et al.) \cite{zhu2021longshorttransformerefficienttransformers} and the decoder (Ghazvininejad et al.) \cite{ghazvininejad-etal-2019-mask}, little progress has been made in increasing the efficiency of the input sequence. This is where this thesis comes in.
+
+
+\section{Project}
+
+\subsection{Completed Work}
+We have made substantial progress this semester in both theory and coding. On the conceptual side, I have been working to understand the full pipeline of NMT and how transformers work at a granular level. On the coding side, we have been optimizing 2 baselines for English to French translation systems. 
+
+The first phase of creating an NMT system is finding training data. We use the WMT 2014 French-English dataset publicly hosted on HuggingFace \cite{bojar-etal-2014-findings}. The dataset contains 40.8 million labelled examples, but only the first 18.1 million are usable. After this point, sentences are not paired with their correct translation. Such examples are useless for training NMT systems. For our experiments, we use the first $7,039,840$ training examples to ensure experiments finish in a timely manner.
+
+The first baseline acts as the “gold standard” for a translation task: the best-performing system possible on the dataset (using byte-pair encoding). The second baseline serves as a “reasonable comparison”: the best-performing system possible on the dataset with a character-based tokenizer. As we will discuss in the Background chapter, Byte-Pair Encoding (BPE) is the standard tokenization method, and character-based tokenization is the simplest tokenization method. Each baseline serves a different purpose: the first shows the performance drop from using autocomplete instead of the standard expensive approach, and the second shows the difference in using autocomplete versus an approach similarly handicapped by limited context representation.
+
+After determining our approach to baselines, we have spent the semester optimizing the performance of both baselines. For the “gold standard” baseline, the only optimization necessary was organizing the training data into chunks of similar length, which reduces the amount of padding used in each batch. This optimization was applied to both baselines. For the character-based tokenizer, optimizations included:
+
+\begin{itemize}
+  \item expanding the vocabulary recognized by the tokenizer,
+  \item specifying BPE tokenization for target side generation (there is no efficiency gain in using any target-side generation method except BPE, hence target-side generation is outside the scope of this thesis),
+  \item modifying the model’s embedding matrix to ensure no embeddings are shared by the 2 tokenizers,
+  \item and determining what maximum possible sentence length leads to the best performance without overwhelming the GPU.
+\end{itemize}
+
+Using the evaluation metrics BLEU and chrF (higher is better, described in greater detail in the Evaluation section), we have achieved the following baseline results (trained over $\sim$7 million examples and 219,995 steps):
+
+\begin{table}[h!]
+    \centering
+    \begin{tabular}{|c c c c|} 
+         \hline
+         Baseline Type & Optimized? & BLEU & chrF \\ [0.5ex] 
+         \hline\hline
+         BPE & No & 27.954 & 56.328 \\ 
+         BPE & \textbf{Yes} & \textbf{30.943} & \textbf{58.477} \\
+         CharTokenizer & No & 7.615 & 32.232 \\
+         CharTokenizer & \textbf{Yes} & \textbf{26.797} & \textbf{55.649} \\
+         \hline
+    \end{tabular}
+    \caption{Top performing baselines.}
+    \label{table:baseline_results}
+\end{table}
+
+As can be seen in Table \ref{table:baseline_results}, optimized BPE performs better than optimized character-based tokenization, but only about 15\% better BLEU.
+
+\subsection{Upcoming Work}
+The next step of the project is to construct the actual autocomplete mechanism. The mechanism has 2 parts: the “encoding” of each sentence into its condensed representation, and using the condensed representation as input into a translation model.
+
+First, we will use a decoder-only transformer to generate each word’s condensed representation. For each character in the input sequence, we will input the character and ask the neural network to predict the next character. If the model correctly predicts the next character, we feed this prediction into the neural network to continue predicting. If the model mispredicts the next character of the word, we (1) manually specify the correct next character in the input and (2) add this character to the condensed representation. This adjustment ‘pushes’ the model into the right direction as it continues predicting characters. After a sentence has been processed, its condensed representation can be interpreted as the fewest number of letters necessary for us to be confident an autocomplete algorithm would infer each word correctly. 
+
+This process is depicted in Figure \ref{fig:condensed_rep}. The text “the woman was running” is the input sentence, and each letter is fed into a decoder-only transformer (via the arrow) to predict the next letter. Green letters are correct predictions, and red letters are incorrect predictions. Any misprediction must be manually corrected, and this is signified in the input text with blue. After processing the input, the condensed representation consists of “twowru”. 
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.75\textwidth]{condensed_rep_creator2.png}
+    \caption{Creation of the condensed representation of \textit{The woman was running}}
+    \label{fig:condensed_rep}
+\end{figure}
+ 
+Once the condensed representation of the sentence has been constructed, we will test the efficacy of 2 different input methods.
+
+The first is to feed just the condensed representation of the sentence into the translation model. Though this string will be relatively intelligible to a human, we hypothesize the model may be able to infer the correct meaning out of it using linguistic and probabilistic properties. The other approach is to specify as part of the input how many characters were removed. This would be achieved by manually inserting an [AUTOCOMPLETE] token in place of every group of characters that were excluded from the condensed representation. 
+
+Using the same example sentence “the woman was running”, Approach 1 defines the condensed representation as “twowru” and Approach 2 defines the condensed representation as “t[AUTO-3]wo[AUTO-4]w[AUTO-3]ru[AUTO-6\footnote{Despite there being 5 letters in \textit{running} after ru-, 6 tokens must be generated because of the End-of-String token.}]” where \textit{[AUTO-k]} means autocomplete \textit{k} tokens. We hypothesize that the second approach will lead to better performance than the first. However, the second approach will lead to longer input sequences, diluting some of the computational efficiency that motivates this project.  

@@ -6,8 +6,9 @@
         "freeze_encoder": false,
         "freeze_decoder": false,
         "batch_size": 32,
-        "num_steps": 1000,
-        "patience": 1000000000
+        "num_steps": 219995,
+        "patience": 1000000000,
+        "max_len": 256
     },
     "corpora": {
         "fr-eng": {

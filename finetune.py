@@ -117,7 +117,7 @@ def finetune(
     model = prepare_model(base_model, freeze_decoder, freeze_encoder, should_finetune)
 
     # resize embeddings matrix (add embeddings from new lang codes)
-    model.resize_token_embeddings(tokenizer_len) 
+    # model.resize_token_embeddings(tokenizer_len, mean_resizing=False) 
     
     if should_finetune:
         optimizer = Adafactor(
@@ -227,6 +227,7 @@ def main():
     report_every = params["report_every"] if "report_every" in params else 500
     validate_every = params["validate_every"] if "validate_every" in params else 500
     patience = params["patience"] if "patience" else 1000000000
+    max_len_from_config = params["max_len"] if "max_len" in params else 128 # max length of sentence before truncating
     
     # Create unique model directory
     base_dir = config["model_dir"]
@@ -249,12 +250,13 @@ def main():
     model_name = params["base_model"]
     
     if model_name == "facebook/nllb-200-distilled-600M":   
-        tgt_tokenizer = NllbTokenizer("600M", max_length=128) # set max length?
+        tgt_tokenizer = NllbTokenizer("600M", max_length=max_len_from_config)
     elif model_name == "facebook/nllb-200-distilled-1.3B": 
-        tgt_tokenizer = NllbTokenizer("1.3B", max_length=128)
+        tgt_tokenizer = NllbTokenizer("1.3B", max_length=max_len_from_config)
     else:
-        tgt_tokenizer = HuggingfaceTokenizer(model_name, max_length=128)
-    src_tokenizer = CharacterTokenizer(max_length=128, offset=len(tgt_tokenizer))
+        tgt_tokenizer = HuggingfaceTokenizer(model_name, max_length=max_len_from_config)
+    # src_tokenizer = CharacterTokenizer(max_length=max_len_from_config, offset=len(tgt_tokenizer))
+    src_tokenizer = tgt_tokenizer
         
     # Create the permutations
     permutations = dict()

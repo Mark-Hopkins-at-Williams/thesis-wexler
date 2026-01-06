@@ -2,7 +2,7 @@ from datasets import load_dataset
 from tqdm import tqdm
 import os
 
-# OVERALL SOURCE: https://huggingface.co/datasets/jhu-clsp/kreyol-mt
+# OVERALL SOURCE: https://huggingface.co/datasets/wmt/wmt14/viewer/fr-en
 # what langs from HF do we want to pull
 lang_pairs = ["fr-en"]
 

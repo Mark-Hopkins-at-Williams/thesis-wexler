@@ -1,0 +1,249 @@
+\chapter{Background}
+When studying modifications to NMT pipelines, it is crucial to have a strong understanding of how the translation occurs. This chapter provides information on how translation happens today.
+\section{A Sentence's Journey from English to \textit{Français}}
+Consider the task of translating the English sentence “The lower tower is newer.” into French. We will discuss the full process of translating this English sentence into its French equivalent “La tour inférieure est plus récente.”
+
+\subsection{Pre-processing}
+\subsubsection{Tokenization (Byte-Pair Encoding)}
+The first step in translation is tokenization, or deconstructing the sentence into smaller units called tokens. After this step, the text is converted to a vector of tokens. The first element in this vector is a \textit{language tag} that specifies the language of text and the last is an \textit{End-of-String token}. One of the main tokenization methods used today is Byte-Pair Encoding (BPE). In this method, characters are replaced with the symbol of their concatenation which to build tokens of a variable length. 
+
+\subsubsection*{\textit{\small{Tokenizing a Text with a BPE Table}}} 
+The first step of BPE tokenization, which is described in “Generating a BPE Table”, is to create a table specifying how tokens should be combined. Suppose, for now, this process has already been run on some training corpus and we have the resulting table of subwords. To tokenize the input text, one follows these steps:
+
+\begin{enumerate}
+  \item Represent each input word as a sequence of its characters and an end-of-word symbol "$\bullet$". 
+  \item For each entry in the BPE table, replace each instance of its set of characters (if present) with the corresponding combination.
+\end{enumerate}
+
+We will now tokenize the example sentence using BPE and the following BPE table (trained over the same example sentence):
+
+\begin{table}[h]
+    \centering
+    \begin{tabular}{|l|l|}
+        \hline
+        \textbf{Unit 1} & \textbf{Unit 2} \\
+        \hline
+        w & e \\
+        we & r \\
+        o & wer \\
+        ower & $\bullet$ \\
+        t & h \\
+        th & e \\
+        \hline
+    \end{tabular}
+    \caption{the BPE table for the sample sentence \textit{The lower tower is newer} with $k = 6$.}
+\end{table}
+
+\begin{enumerate}
+  \item Represent each input word as a sequence of its characters and an end-of-word symbol "$\bullet$":
+
+    \hspace*{1cm}Input = \{T h e $\bullet$, l o w e r $\bullet$, t o w e r $\bullet$, i s $\bullet$, n e w e r $\bullet$\}
+  
+  \item For each entry in the BPE table, replace each instance of its set of characters (if present) with the corresponding combination:
+
+\begin{table}[h]
+    \begin{adjustwidth}{1.75cm}{0cm} % indent so part of list
+        \begin{tabular}{l|l}
+            \textbf{State} & \textbf{Iteration} \\
+            \hline
+            \{T h e $\bullet$, l o w e r $\bullet$, t o w e r $\bullet$, i s $\bullet$, n e w e r $\bullet$\} & Initial State \\
+            \hspace*{3.5cm} $\downarrow$ & \hspace*{0.5cm} $\downarrow$ \\
+            \{T h e $\bullet$, l o \textbf{we} r $\bullet$, t o \textbf{we} r $\bullet$, i s $\bullet$, n e \textbf{we} r $\bullet$\} & Pass 1 \\
+            \hspace*{3.5cm} $\downarrow$ & \hspace*{0.5cm} $\downarrow$ \\
+            \hspace*{3.5cm} \dots & Passes 2-5 \\
+            \hspace*{3.5cm} $\downarrow$ & \hspace*{0.5cm} $\downarrow$ \\
+            \{\textbf{The} $\bullet$, l \textbf{ower$\bullet$}, t \textbf{ower$\bullet$}, i s $\bullet$, n e \textbf{wer} $\bullet$\} & Final ($6^{th}$) Pass \\
+        \end{tabular}
+        \caption{tokenization of the sample sentence using BPE, where bold represents a merge}
+    \end{adjustwidth}
+\end{table}
+
+\end{enumerate}
+
+After running this process, the tokens are \{the, $\bullet$, l, ower$\bullet$, i, s, n, e, wer\}. Even after just 6 passes ("merges"), the tokenization is logical: \textit{the} is its own token – which makes sense as it cannot be further subdivided – and common suffices have been grouped together. Of course, in practice, more than 6 merges are used to achieve more logical tokenizations. Regardless of $k$, once the input has been tokenized, the resulting text can be used in the next stage of NMT. 
+
+\subsubsection*{\textit{\small{Generating a BPE Table}}} 
+
+The steps to create the BPE table over a training corpus are as follows:
+\begin{enumerate}[itemsep=0mm, topsep=0mm]
+  \item Initialize the symbol vocabulary as each instance of each character in the training corpus. 
+  \item Represent each word as a sequence of characters and an end-of-word symbol "$\bullet$".
+  \item For the desired number of merges $k$:
+  \begin{enumerate}[itemsep=0mm, topsep=0mm]
+    \item Count the frequency of each symbol pair in the corpus (a symbol may be a character or a combination of characters, depending on what merges have already occurred)
+    \item Identify the pair of symbols that occurs most frequently in the corpus
+    \item Add the pair to the BPE table
+    \item Replace each instance of the pair in the input corpus with its concatenated equivalent
+  \end{enumerate}
+\end{enumerate}
+
+The final size of the symbol vocabulary equals the size of the initial vocabulary plus the number of times the merge step was run. The amount of merge steps plays a crucial role. Too few merges means the learned subwords are not meaningful, but too many steps means the algorithm is essentially memorizing the words it sees, decreasing generalizability of tokens. 
+
+\subsubsection*{\textit{\small{Discussion of BPE's Efficacy}}} 
+BPE is an effective method for many reasons. It allows for the creation of a fixed-size vocabulary (an important requirement of neural network model inputs) from variable-length input. Further, BPE symbol sequences are still interpretable by themselves. This property provides an advantage compared to Huffman encoding. Finally, character n-grams that are frequent in the input are merged early, which leads to efficient representations. 
+
+However, BPE is also subject to important constraints. Mainly, which merges occur first in the input text is dictated by which merges occurred first in the training corpus. If the training corpus does not share semantic patterns to the input text, BPE produces sub-optimal tokens.
+
+To illustrate this flaw, consider tokenizing the sentence \textit{the flower is older} with the sample BPE table:
+
+\begin{table}[h]
+    \centering
+    \begin{tabular}{l|l}
+        \textbf{State} & \textbf{Iteration} \\
+        \hline
+        \{T h e $\bullet$, f l o w e r $\bullet$, i s $\bullet$, o l d e r $\bullet$\} & Initial State \\
+        \hspace*{3cm} $\downarrow$ & \hspace*{0.5cm} $\downarrow$ \\
+        \{T h e $\bullet$, f l o \textbf{we} r $\bullet$, i s $\bullet$, o l d e r $\bullet$\}  & Pass 1 \\
+        \hspace*{3cm} $\downarrow$ & \hspace*{0.5cm} $\downarrow$ \\
+        \hspace*{3cm} \dots & Passes 2-5 \\
+        \hspace*{3cm} $\downarrow$ & \hspace*{0.5cm} $\downarrow$ \\
+        \{\textbf{The} $\bullet$, f l \textbf{ower$\bullet$}, i s $\bullet$, o l d e r $\bullet$\} & Final ($6^{th}$) Pass \\
+    \end{tabular}
+\end{table}
+
+Despite \textit{older} containing a suffix (-er) found many times in the example sentence, \textit{older} does not match the exact semantic patterns BPE identified while training. As a result, while \textit{flower} is tokenized into somewhat sensible components, \textit{older} is not tokenized at all which is inefficient.
+
+\subsubsection{Token Embeddings}
+The next step in the translation process is to represent each token as a number, because text is harder to reason with programmatically than numbers. After tokenization, each token is replaced by its corresponding token ID: an integer between 0 and $size(vocab) - 1$ \footnote{Vocabulary size is the number of tokens recognized by the tokenizer.}. Each token ID corresponds to an embedding – a vector of length $d_{model}$ (often 512 or 1024). Practically, all embeddings are stored in an embedding matrix where column $i$ is the embedding for word $i$ in the vocabulary. The final dimensions of the embedding matrix are $size(vocab)*d_{model}$. After being converted to its token ID, each token is mapped to its encoding in O(1) time through matrix multiplication.
+
+\subsubsection{Positional Encodings}
+The next step in the process is representing a token’s position within a sentence. Intuitively, word order is crucial to interpreting meaning in English (consider the difference between “a shark ate John” and “John ate a shark”). However, each token – irrespective of its position in the input sentence – receives the same embedding. This means information about a token’s location needs to be explicitly encoded, otherwise it will be lost. For example, the noun phrase “a better theme” may be tokenized as \textit{\{“the”, “bett”, “er”, “the”, “me”\}}, where the article \textit{the} and prefix \textit{the} are indistinguishable from a token standpoint. 
+
+To mitigate this issue, each token in the input sentence receives a positional encoding: a vector with the same length as the embeddings ($d_{model}$). This positional encoding stores information about the position of the token which can be used by the translation model. For each token in the input sentence, a positional encoding vector is constructed using a sequence of alternating sine and cosine expressions. The elements are defined as: 
+
+\[
+\begin{aligned}
+PE_{(pos,2i)} &= \sin\!\left( \frac{pos}{10000^{2i/d_{\text{model}}}} \right)\\
+PE_{(pos,2i+1)} &= \cos\!\left( \frac{pos}{10000^{2i/d_{\text{model}}}} \right)
+\end{aligned}
+\]
+
+\begin{center}
+where \textit{PE} is an element in the positional encoding, \textit{pos} is the location of the word in the input sentence, $0 \leq \textit{i} \leq  \frac{d_{model}}{2}$, and \textit{$d_{model}$} is the dimension of the embedding (and hence the size of a word’s positional encoding).
+\end{center}
+
+Sinusoidal functions allow the translation model to learn about not just a word’s location but also its relative position. For a fixed offset k, $sin(x+k)$ can be represented as a linear combination of sine and cosine functions, which means $PE_{pos+k}$ can be represented as a linear combination of $PE_{pos}$. As a result, the model can efficiently take into account distances between words.
+
+Before putting the tokens through the transformer, each token’s embedding is summed with its positional encoding to create a more location-aware representation of the word.
+
+\subsection{Translation (Transformers)}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.45\textwidth]{transformers_overview.png}
+    \caption{a high-level overview of the transformer architecture. The left gray rectangle depicts an encoder block, and the right gray rectangle depicts a decoder block.}
+    \label{fig:transformers_overview}
+\end{figure}
+With the text properly formatted, the actual translation process can now occur. Today, the transformer is the most advanced type of architecture used to translate. The transformer is a type of neural network used to solve sequence-to-sequence problems (here, converting a sequence of English words to an equivalent sequence of French words). The transformer is a combination of the encoder and the decoder (see Figure \ref{fig:transformers_overview}): the encoder builds up a language-agnostic and context-rich representation of the input text, and the decoder converts this representation into a sequence in the output language, token by token. The encoder-decoder approach makes the transformer very versatile, both with respect to language pairs used in translation but also the types of problems the architecture can solve. 
+
+When translating unseen text, the model makes one pass through the encoder and multiple passes through the decoder. When training, the model makes one pass through the encoder and only one pass through the decoder thanks to masking. The attention mechanism is crucial to understanding the transformer architecture. We will start by discussing attention, then cover how attention is used in both the encoder and decoder.
+
+\subsubsection{Attention}
+Attention is a method of condensing an arbitrary number of vectors into one vector. This property is useful for contextualizing words because understanding a word’s meaning often requires understanding the other words in a sentence. However, sentences can be an arbitrary number of words, and some words are more important than others when studying a single word. Attention gives us the tools to handle both of these problems. 
+
+Suppose there is a word we want to contextualize (the ‘query’, stored in a row of matrix $Q$) that is represented by a vector embedding. Suppose we also have a lookup table: each row is a token that is represented by a dense vector (the ‘key’, stored in a row of matrix $K$) which is paired with another complex vector representation (the ‘value’, stored in a row in matrix $V$). The goal of attention is to identify which keys are most important for the current query. This is done through a ‘weighted average’ of every value in the lookup table. For term $i$ in this average, the weight is the affinity between the query and the value associated with key $i$. Affinity can be calculated in many ways, but the dot product is often used. This weighted average has a powerful result: the output vector is a combination of all values in the table, but the tokens that are most important for the query (higher affinity) have a larger influence.
+
+In practice, attention is slightly more complicated. Attention is not performed with the query, but instead with a ‘modified query’. This ‘modified query’ is obtained by multiplying the query with a weight matrix of dimension $d_{model}$ * $d_{model}$. An analogous process occurs for the keys and values (leveraging K and V to parallelize the operation). Introducing weight matrices does not change the intuition or interpretation of attention. However, introducing weight matrices has 2 benefits: 
+\begin{enumerate}[itemsep=0mm, topsep=0mm]
+  \item There are now $3 * d_{model}^2$ more weights the model can manipulate and optimize, which increases performance in the long run. 
+  \item The model can now perform different ‘types’ of attention (i.e. with respect to meaning, gender, agreement, and other semantics).
+\end{enumerate}
+
+Benefit number 2 is obtained with a slight modification to the attention mechanism called multi-head attention. In multi-head attention, we split the query weight matrix into k smaller matrices, each with dimensions $d_{model} * \frac{d_{model}}{k}$. We then use these matrices to split the query into $k$ shorter modified queries that, together, have the same size as the original query. We split the keys and values in a similar way, and we perform attention over each set of ‘miniature’ components in parallel. Combining each of the miniature outputs into one vector results in a vector that is the same length as the output of single-head attention. The difference, though, is that more types of information have been attended to. This practice leads to a potentially more robust contextualization, and in practice, multi-head attention is used.
+
+\subsubsection{Encoder}
+Moving onto the transformer, the first component of the architecture is the encoder. The goal of the encoder is to gain a deep ‘understanding’ of the input text. The encoder does this by passing the input through $n$ (often 6) identical blocks of Multi-Head Self-Attention and a Feed Forward neural network. Each block serves to improve the encoder state (a series of vectors where vector $i$ is a contextualized representation of the $i^{th}$ token in the input).
+
+Self-attention is attention performed over all tokens in the input sequence. The goal is to understand what other tokens in the source sentence matter to understanding the current one. The query is the current token being contextualized, and the keys are all the other tokens in the sentence. Though the query can only be one token at any time, the attention mechanism is parallelized so that all tokens are being studied concurrently. The output of self-attention is the set of contextualized vectors (one for each token).
+
+Afterwards, the Feed-Forward Network adds non-linearity and expands the representation space for each vector.
+
+\subsubsection{Decoder}
+The second phase of the transformer is the decoder. Recall that the goal of the decoder is to use the (now fully contextualized) encoder state to generate text in the output language, token by token. The decoder functions by passing text through n (also usually 6) identical blocks of Masked Multi-Head Self-Attention, Multi-Head Cross-Attention, and a Feed Forward neural network. In practice, the model passes the output language tag into the decoder, moves through all $n$ decoder blocks, and then the decoder outputs a probability distribution of what the next token could be\footnote{The probability distribution and prediction is generated immediately after the decoder has finished (discussed further in the Predictions subsection).}. The most likely token is added to the output text then the output text is re-fed into the decoder. This process continues until the most probable token is \texttt{[End of String]}. Each pass through the decoder extends the decoder state (a series of vectors where each vector $i$ is a complex representation of the $i^{th}$ token in the output sequence). Each block in the decoder improves the most recently generated vector in the decoder state.
+
+Decoder-side masked self-attention has a similar goal to encoder-side self-attention: using what has been generated to determine what should be generated next. This often manifests as grammar and agreement in the target language. The query is the current token being contextualized, and the keys are all the other tokens already generated in the sentence. However, an important difference with decoder-side self-attention is that it is a masked process during training. This difference comes from the fact that generating the next token requires passing through all $n$ decoder blocks, which is computationally intensive.
+
+Because a single pass through all n decoder blocks predicts only the next token, no optimization is possible: the decoder must be run repeatedly until the \texttt{[End of String]} token is produced. Intuitively, parallelization is impossible because future tokens have not yet been generated. However, a shortcut can be taken when training the model. In training, regardless of what token the decoder predicts next, we will feed in the next token in the training text (i.e. the “correct” next token). As a result, we can perform self-attention on each token concurrently. But caution is required: the mechanism should not be able to attend to tokens that are after itself because, if we were generating tokens sequentially, those do not exist yet. To enforce this principle, we apply a mask of $-\infty$ to all future tokens in the training text – making their weights in the weighted average (and their contribution to the contextualized embedding) $0$.
+
+The next phase of decoding is cross-attention, or using the current decoder state to choose which parts of the input sequence are most relevant to generating the next token. This type of attention is not masked. Here, the query is the result of self-attention for the most recent token in the decoder state and the keys are each of the encoder states. The output of cross-attention is the source-contextualized vector for the most recent token. This contextualized vector and the current decoder state are used as input to the Feed-Forward Network.
+
+Finally, the Feed-Forward Network again adds non-linearity and expands the representation space.
+
+\subsubsection{Predictions}
+After all $n$ decoder blocks have been run, the decoder state has been generated. The final part of the transformer involves turning the decoder state into text predictions. 
+
+First, the last vector in the decoder state is sent through a linear layer. This step converts the token representation from a vector of size $d_{model}$ to a vector with the same size as the vocabulary. Each item $i$ is a logit that represents the unscaled likelihood of token $i$ being the next token in the output. 
+
+Then, the vector is turned into a probability distribution across all tokens using softmax. The token with the highest probability is deemed the next token in the output sequence. If the predicted token is \texttt{[End of String]}, generation is finished. If not, the decoder is re-ran with a longer decoder state to accommodate the next token.
+
+\subsection{Evaluation}
+After creating translations, their correctness must be evaluated. Two frequently used evaluation metrics are Bilingual Evaluation Understudy (BLEU) and CHaRacter-level F-score (chrF). We discuss them in this section.
+
+\subsubsection{Precision / Recall}
+Before discussing BLEU and chrF, it is first necessary to understand how AI systems are generally evaluated. Two key metrics are precision and recall. To motivate these, suppose we are trying to predict if a mole is cancerous or not from an image. Any given mole is either cancerous or not in actuality, and an AI system will predict any given mole as cancerous or not. Of all the moles the model predicts as cancerous, precision is the percent of moles that are truly cancerous. And of all the moles that are truly cancerous, recall is the percent of moles that the model successfully identified as cancerous. In other words, precision is the percentage of a model’s guesses that are correct, and precision is the percent of correct answers the model found.
+
+Though both precision and recall are important, it is difficult to simultaneously increase both. As a result, many models compromise by optimizing the F1-score. The harmonic mean of precision and recall, F1-score is defined as 
+
+\[
+F1 = \frac{2 \times \mathrm{Precision} \times \mathrm{Recall}}{\mathrm{Precision} + \mathrm{Recall}}.
+\]
+
+\subsubsection{BLEU}
+BLEU operates as a modified version of recall. It is formalized, at the corpus level, as 
+\[
+\text{BLEU} = \text{BP} \cdot \exp \left( \sum\limits_{n=1}^{N} w_{n} \log p_{n} \right)
+\]
+\begin{center}
+where \textit{BP} is the Brevity Penalty, \textit{n} is the length of the n-gram currently being taken into account (\textit{N} is the maximum sized n-gram that is considered, often N=4), \textit{$w_n$} is a weight (often 1/N), and \textit{$p_n$} is the modified n-gram precision.
+\end{center}
+
+
+The Brevity Penalty punishes sentences that are too short. It is formalized as 
+\[
+BP = \begin{cases} 
+1 & \text{if } c > r \\ 
+e^{(1-r/c)} & \text{if } c \le r 
+\end{cases}
+\]
+\begin{center}
+where \textit{c} is the length of the candidate translation and \textit{r} is the length of reference sentence that is closest in length to the candidate translation.
+\end{center}
+
+On the other hand, modified n-gram precision ensures sentences are not too long (by exhausting reference words after a matching candidate word is identified). It is defined as
+
+\[
+p_n = \frac{\sum_{C \in \{\text{Candidates}\}} \sum_{n\text{-gram} \in C} \text{Count}_{\text{clip}}(n\text{-gram})}{\sum_{C' \in \{\text{Candidates}\}} \sum_{n\text{-gram}' \in C'} \text{Count}(n\text{-gram}')}
+\]
+\begin{center}
+where \textit{C} is the set of candidate sentences, the numerator is a sum of the number of matched n-grams, and the denominator is a sum of all the n-grams. The top count is clipped, meaning any words that show up in the candidate sentence are reduced to the maximum number of times they show up in a reference sentence.
+\end{center}
+
+BLEU defines n-grams at the word level and is applied across the entire corpus at once.
+
+\subsubsection{chrF}
+chrF, on the other hand, operates as a modified F1 score. chrF is formalized as
+
+\[
+\text{chrF}(\beta) = (1 + \beta^2) \frac{\text{chrP} \cdot \text{chrR}}{\beta^2 \cdot \text{chrP} + \text{chrR}}
+\]
+\begin{center}
+where $\beta$ is a parameter which assigns $\beta$ times more importance to recall than to precision, \textit{chrP} is the average of precision across all n-grams present in both the candidate and reference translation, and \textit{chrR} is the average of recall across all n-grams present in both the candidate and reference translation.
+\end{center}
+
+chrF defines n-grams at the character level (often $n$ = 6) and is calculated at the sentence level.
+
+\section{Tokenization Approaches}
+As discussed in \textit{A Sentence's Journey}, tokenization is the process of reducing text into subunits (called tokens) that can be converted into a numeric format. Byte-Pair Encoding (BPE) is a popular method of tokenization, but other methods that exist as well. Two methods that are particularly important to this thesis are character-level tokenization and byte-level tokenization. 
+
+\subsection{Character-Level Tokenization}
+Unlike BPE, where tokens can be subwords, a token in character-level tokenization is always a character. As a result, in character-level tokenization, each character becomes a token. For this project, the token vocabulary consists of English alphanumeric characters \& punctuation as well as characters that appeared over 500 times in the first portion of the French dataset. When tokenizing a text, any character that is not in the vocabulary receives the \texttt{[UNK]} token.
+
+Character-level tokenization is a very adaptable approach; nearly all words encountered in an English text consist solely of alphanumeric characters that are already in the vocabulary. However, character-level tokenization results in long token sequences (compared to BPE) and eliminates the ability to group similar characters into subword units.
+
+\subsection{Byte-Level Tokenization}
+Byte-level tokenization relies on the UTF-8 encoding scheme. Any character that can be stored on a computer has a unique 4-6 character long identifier, known as a Unicode code point. For example, \emoji{blush} is represented by U+1F60A in Unicode. UTF-8 is the encoding system that converts each code point into a 1-4 byte hexadecimal representation (ex: \emoji{blush} becomes F0 9F 98 8A via UTF-8). In byte-level tokenization, each hexadecimal byte is a token\footnote{Every byte encodes how many bytes correspond to the current letter, allowing us to break the bytes apart into separate tokens.}.
+
+Tokenizing English text at the byte-level is very similar to tokenizing at the character-level because English characters are always 1 byte in UTF-8. However, characters in other languages are represented by 2+ bytes in UTF-8 (ex: é is encoded as C3 A9 and € is encoded as E2 82 AC). As a result, tokenized sequences of non-English text are much longer than tokenized sequences of English text. 
+
+In some ways, byte-level tokenization is preferred to character-level tokenization as there are only 256 possible tokens (\texttt{00-FF}) compared to 1 million+ tokens possible in character-based tokenization. However, byte-level tokenization exhibits a similar tradeoff to character-based tokenization; any single character can be encoded successfully, but encoded sequences are long (potentially even longer than the input text for non-English languages).
+

@@ -29,8 +29,9 @@ class Tokenizer(ABC):
 
 
 class CharacterTokenizer(Tokenizer):
-
-    def __init__(self, max_length=None, offset = 0):
+    # the offset is so we can add our tokens to "the end" of the currently used embedding matrix for the other side 
+    # this is bc NLLB requires 1 embedding matrix but we have diff IDs for diff tokenizers
+    def __init__(self, max_length=None, offset = 0):  
       # define full vocabulary for eng-fra
       self.beg_token = "<bos>"
       self.end_token = "<eos>"

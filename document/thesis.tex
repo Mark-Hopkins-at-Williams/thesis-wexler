@@ -16,6 +16,16 @@
 \usepackage{multicol}
 \usepackage{xparse}
 \usepackage{subfigure}
+\usepackage{enumitem}
+\usepackage{caption}
+\usepackage{emoji}
+\usepackage{fontspec}
+\usepackage{changepage}
+
+
+
+\graphicspath{{images/}}
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Thesis body           %%
@@ -27,14 +37,14 @@
 %% Front matter          %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%\include{title}
-%\tableofcontents
-%\listoffigures
-%\listoftables
+\include{title}
+\tableofcontents
+\listoffigures
+\listoftables
 \onehalfspacing
 
 \include{chapter1}
-
+\include{chapter2}
 
 %%%%%%%% References %%%%%%%%%%
 \bibliographystyle{acm}
