@@ -1,5 +1,6 @@
 import unittest
 from tokenization import NllbTokenizer
+from tokenization import ByteTokenizer
 from torch import tensor
 
 
@@ -67,6 +68,75 @@ class TestTokenization(unittest.TestCase):
         self.assertEqual(special_tokens["</s>"], 2)
         self.assertEqual(special_tokens["<unk>"], 3)
         self.assertEqual(special_tokens["<mask>"], 256203)
+
+    def test_byte_tokenizer1(self):
+        tokenizer = ByteTokenizer()
+        lines = ["cat"]
+        tokenized = tokenizer(lines, lang_code="eng_Latn")
+        eng_id = tokenizer.get_special_tokens()["eng_Latn"]
+        eos = tokenizer.get_special_tokens()["<eos>"]
+        expected = {"input_ids": [[eng_id, 99, 97, 116, eos]]}
+        self.assertEqual(tokenized["input_ids"].tolist(), expected["input_ids"])
+
+    def test_byte_tokenizer2(self):
+        tokenizer = ByteTokenizer()
+        lines = ["cat", "dogs"]
+        tokenized = tokenizer(lines)
+        eng_id = tokenizer.get_special_tokens()["eng_Latn"]
+        eos = tokenizer.get_special_tokens()["<eos>"]
+        pad = tokenizer.get_special_tokens()["<pad>"]
+        expected = {
+            "input_ids": [
+                [eng_id, 99, 97, 116, eos, pad],
+                [eng_id, 100, 111, 103, 115, eos],
+            ]
+        }
+        self.assertEqual(tokenized["input_ids"].tolist(), expected["input_ids"])
+
+    def test_byte_tokenizer3(self):
+        tokenizer = ByteTokenizer()
+        lines = ["cat", "안녕"]
+        tokenized = tokenizer(lines)
+        eng_id = tokenizer.get_special_tokens()["eng_Latn"]
+        eos = tokenizer.get_special_tokens()["<eos>"]
+        pad = tokenizer.get_special_tokens()["<pad>"]
+        expected = {
+            "input_ids": [
+                [eng_id, 99, 97, 116, eos, pad, pad, pad],
+                [eng_id, 236, 149, 136, 235, 133, 149, eos],
+            ]
+        }
+        self.assertEqual(tokenized["input_ids"].tolist(), expected["input_ids"])
+
+    def test_byte_tokenizer4(self):
+        tokenizer = ByteTokenizer()
+        lines = ["cat", "dogs"]
+        tokenized = tokenizer(lines, lang_code="fra_Latn")
+        lang_id = tokenizer.get_special_tokens()["fra_Latn"]
+        eos = tokenizer.get_special_tokens()["<eos>"]
+        pad = tokenizer.get_special_tokens()["<pad>"]
+        expected = {
+            "input_ids": [
+                [lang_id, 99, 97, 116, eos, pad],
+                [lang_id, 100, 111, 103, 115, eos],
+            ]
+        }
+        self.assertEqual(tokenized["input_ids"].tolist(), expected["input_ids"])
+
+    def test_byte_tokenizer5(self):
+        tokenizer = ByteTokenizer(offset=100)
+        lines = ["cat", "dogs"]
+        tokenized = tokenizer(lines, lang_code="fra_Latn")
+        lang_id = tokenizer.get_special_tokens()["fra_Latn"]
+        eos = tokenizer.get_special_tokens()["<eos>"]
+        pad = tokenizer.get_special_tokens()["<pad>"]
+        expected = {
+            "input_ids": [
+                [lang_id, 199, 197, 216, eos, pad],
+                [lang_id, 200, 211, 203, 215, eos],
+            ]
+        }
+        self.assertEqual(tokenized["input_ids"].tolist(), expected["input_ids"])
 
 
 if __name__ == "__main__":
