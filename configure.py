@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from permutations import create_random_permutation_with_fixed_points
 import shutil
-from tokenization import NllbTokenizer, HuggingfaceTokenizer, CharacterTokenizer
+from tokenization import NllbTokenizer, HuggingfaceTokenizer, CharacterTokenizer, ByteTokenizer
 
 
 @dataclass
@@ -73,8 +73,10 @@ def harvest_language_codes(config):
     return lang_codes
 
 
-def initialize_tokenizers(ft_params):  # TODO: update to use FinetuningParameters object
-    tokenizer_types = set(
+# initialize the tokenizers by creating each unique tokenizer necessary 
+# then assinging them to src and tgt according to config
+def initialize_tokenizers(ft_params): 
+    tokenizer_types = set( # set gets rid of duplicates [ex: default, default]
         [
             (ft_params.src_tokenizer, ft_params.max_src_length),
             (ft_params.tgt_tokenizer, ft_params.max_tgt_length),
@@ -86,23 +88,17 @@ def initialize_tokenizers(ft_params):  # TODO: update to use FinetuningParameter
         if tokenizer_type == "default":
             model_name = ft_params.base_model
             if model_name == "facebook/nllb-200-distilled-600M":
-                tokenizers[(tokenizer_type, max_length)] = NllbTokenizer(
-                    "600M", max_length=max_length
-                )
+                tokenizers[(tokenizer_type, max_length)] = NllbTokenizer("600M", max_length=max_length)
             elif model_name == "facebook/nllb-200-distilled-1.3B":
-                tokenizers[(tokenizer_type, max_length)] = NllbTokenizer(
-                    "1.3B", max_length=max_length
-                )
+                tokenizers[(tokenizer_type, max_length)] = NllbTokenizer("1.3B", max_length=max_length)
             else:
-                tokenizers[(tokenizer_type, max_length)] = HuggingfaceTokenizer(
-                    model_name, max_length=max_length
-                )
+                tokenizers[(tokenizer_type, max_length)] = HuggingfaceTokenizer(model_name, max_length=max_length)
             offset = len(tokenizers[(tokenizer_type, max_length)])
-    for tokenizer_type, max_length in tokenizer_types:
+    for tokenizer_type, max_length in tokenizer_types: # this must be its own loop bc we need offset
         if tokenizer_type == "character":
-            tokenizers[(tokenizer_type, max_length)] = CharacterTokenizer(
-                max_length=max_length, offset=offset
-            )
+            tokenizers[(tokenizer_type, max_length)] = CharacterTokenizer(max_length=max_length, offset=offset)
+        if tokenizer_type == "byte":
+            tokenizers[(tokenizer_type, max_length)] = ByteTokenizer(max_length=max_length, offset=offset)
     src_tokenizer = tokenizers[(ft_params.src_tokenizer, ft_params.max_src_length)]
     tgt_tokenizer = tokenizers[(ft_params.tgt_tokenizer, ft_params.max_tgt_length)]
     return src_tokenizer, tgt_tokenizer

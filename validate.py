@@ -12,6 +12,7 @@ from permutations import load_permutation_map
 from transformers import AutoModelForSeq2SeqLM
 
 
+# actual translation method
 def translate(
     src_tokenized,
     tgt_tokenizer,
@@ -26,9 +27,7 @@ def translate(
     model.eval()
     result = model.generate(
         **src_tokenized.to(model.device),
-        forced_bos_token_id=tgt_tokenizer.get_special_tokens()[
-            tgt_lang
-        ],  # in tgt lang's tokenizer
+        forced_bos_token_id=tgt_tokenizer.get_special_tokens()[tgt_lang], 
         max_new_tokens=int(a + b * src_tokenized.input_ids.shape[1]),
         num_beams=num_beams,
         **kwargs,
@@ -39,6 +38,8 @@ def translate(
     return tgt_tokenizer.batch_decode(result)  # in tgt lang's tokenizer
 
 
+# translate TokenizedMixtureOfBitexts (w/ translate())
+# results in dict where keys are lang pairs (ie eng_Latn->fra_Latn) and value is list of translations
 def translate_tokenized_mixture_of_bitexts(
     mix, model, tgt_tokenizer, lang_codes, pmap=dict()
 ):
@@ -56,12 +57,13 @@ def translate_tokenized_mixture_of_bitexts(
             translations[key] = []
         translated = translate(
             src, tgt_tokenizer, model, tgt_code, permutation
-        )  # tgt lang's tokenizer
+        )  
         translations[key].extend(translated)
         batch = mix.next_batch()
     return translations
 
 
+# generate chrF and BLEU of translations
 def evaluate_translations(candidate_translations, reference_translations):
     bleu_calc = evaluate.load("sacrebleu")
     chrf_calc = evaluate.load("chrf")
@@ -77,7 +79,7 @@ def evaluate_translations(candidate_translations, reference_translations):
         "chrf": round(chrf_result["score"], 3),
     }
 
-
+# evaluation method that is called in finetune.py
 def evaluate_experiment(experiment_dir):
     logger(f"Initializing model from: {experiment_dir}")
     config_file = Path(experiment_dir) / "experiment.json"
@@ -87,6 +89,8 @@ def evaluate_experiment(experiment_dir):
     model = AutoModelForSeq2SeqLM.from_pretrained(experiment_dir)
     if USE_CUDA:
         model.cuda()
+
+    ## GENERATE TEST DATASET     
     lang_codes = harvest_language_codes(config)
     src_tokenizer, tgt_tokenizer = initialize_tokenizers(ft_params)
     pmap = load_permutation_map(Path(experiment_dir) / "permutations.json")
@@ -99,12 +103,16 @@ def evaluate_experiment(experiment_dir):
         permutation_map=pmap,
     )
     logger(f"Translating test data")
+
+    ## TRANSLATE TEST DATASET
     translations = translate_tokenized_mixture_of_bitexts(
         tokenized_test, model, tgt_tokenizer, lang_codes, pmap
     )
     with open(Path(experiment_dir) / "translations.json", "w") as writer:
         json.dump(translations, writer)
     logger("...translation complete.")
+
+    ## NICELY PACKAGE TEST DATASET (REFERENCE TRANSLATIONS)
     logger(f"Collating reference translations")
     test_data = MixtureOfBitexts.create_from_config(config, "test", only_once_thru=True)
     references = dict()
@@ -121,6 +129,8 @@ def evaluate_experiment(experiment_dir):
     with open(Path(experiment_dir) / "references.json", "w") as writer:
         json.dump(references, writer)
     logger("...references complete.")
+
+    ## GENERATE SCORES
     logger(f"Scoring translations")
     scores = dict()
     for key in translations:
@@ -130,6 +140,7 @@ def evaluate_experiment(experiment_dir):
     logger("...scoring complete.")
 
 
+# evaluation method for some arbitrary model and data
 def evaluate_model(model_name, config_file):
     with open(config_file) as reader:
         config = json.load(reader)

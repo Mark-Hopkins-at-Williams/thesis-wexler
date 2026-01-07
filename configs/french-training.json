@@ -1,8 +1,8 @@
 {
-    "model_dir": "experiments/french-training",
+    "model_dir": "models/french-training",
     "finetuning_parameters": {
         "base_model": "facebook/nllb-200-distilled-600M",
-        "src_tokenizer": "character",
+        "src_tokenizer": "byte",
         "max_src_length": 512,
         "tgt_tokenizer": "default",
         "max_tgt_length": 128,
@@ -10,7 +10,7 @@
         "freeze_encoder": false,
         "freeze_decoder": false,
         "batch_size": 32,
-        "num_steps": 219995,
+        "num_steps": 550,
         "patience": 1000000000
     },
     "corpora": {
