@@ -19,6 +19,7 @@ def cleanup():
     torch.cuda.empty_cache()
 
 
+## PREPARE MODEL FOR TRAINING ACCORDING TO EXPERIMENT SPECIFICATIONS
 def prepare_model_for_finetuning(ft_params):
     if ft_params.should_finetune:
         model = AutoModelForSeq2SeqLM.from_pretrained(ft_params.base_model)

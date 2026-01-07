@@ -36,7 +36,7 @@ def plot_losses(train_x, train_y, dev_x, dev_y, out_path: str):
     plt.grid(True)
     plt.savefig(out_path)
 
-
+# FINETUNING METHOD
 def finetune(model, train_data, dev_data, model_dir, ft_params):
     logger(f"Training {model_dir}")
 
@@ -96,6 +96,7 @@ def finetune(model, train_data, dev_data, model_dir, ft_params):
 
     model.train()
 
+    # TRAINING LOOP
     for step in tqdm(range(1, ft_params.num_training_steps + 1)):
         try:
             x, y, _, _ = train_data.next_batch()
@@ -126,13 +127,15 @@ def finetune(model, train_data, dev_data, model_dir, ft_params):
             else:
                 raise
 
+        # calculating training loss since last report
         if step % ft_params.report_every == 0:  # logging
             avg_train_loss = np.mean(train_losses[-ft_params.report_every :])
             logger(f"Step {step} (train): {avg_train_loss:.4f}")
             train_plot_x.append(step)
             train_plot_y.append(avg_train_loss)
 
-        if step % ft_params.validate_every == 0:  # validation
+        # validation (after specific num steps)
+        if step % ft_params.validate_every == 0:  
             logger("Validating...")
             dev_loss = evaluate(model, dev_data, batches=ft_params.dev_batches)
             logger(f"Dev loss: {dev_loss:.4f}")
@@ -155,6 +158,8 @@ def finetune(model, train_data, dev_data, model_dir, ft_params):
                 best_dev_loss = dev_loss
                 steps_since_best = 0
                 model.save_pretrained(model_dir)
+
+            # dev loss didn't improve -> early stopping if happened enough times
             else:
                 steps_since_best += 1
                 logger(
@@ -175,13 +180,17 @@ def main():
     with open(args.config) as reader:
         config = json.load(reader)
 
-    ft_params = read_finetuning_params(config)
+    ## SETUP FOR EXPERIMENT
+    ft_params = read_finetuning_params(config) # save finetuning params neatly in object 
     experiment_dir = create_experiment_dir(config, args.config)
-    lang_codes = harvest_language_codes(config)
-    src_tokenizer, tgt_tokenizer = initialize_tokenizers(ft_params)
+    lang_codes = harvest_language_codes(config) # creates dict: (corpus, lang) key and language code value
+    src_tokenizer, tgt_tokenizer = initialize_tokenizers(ft_params) # initializes tokenizers for src and tgt
 
+    ## CREATE PERMUTATIONS
     pmap = create_permutations(config, src_tokenizer)
     save_permutation_map(pmap, Path(experiment_dir) / "permutations.json")
+
+    ## CREATE DATASETS
     train_data = MixtureOfBitexts.create_from_config(
         config, "train", only_once_thru=False
     )
@@ -200,9 +209,13 @@ def main():
         lang_codes=lang_codes,
         permutation_map=pmap,
     )
+
+    ## PREPARE FOR FINETUNING 
     model = prepare_model_for_finetuning(ft_params)
     # resize embeddings matrix (add embeddings from new lang codes)
-    model.resize_token_embeddings(len(src_tokenizer) + len(tgt_tokenizer))
+    model.resize_token_embeddings(len(src_tokenizer) + len(tgt_tokenizer), mean_resizing=False)
+
+    ## FINETUNE
     finetune(
         model,
         tokenized_train,
@@ -210,6 +223,8 @@ def main():
         experiment_dir,
         ft_params,
     )
+
+    ## EVALUATE
     evaluate_experiment(experiment_dir)
 
 
