@@ -161,8 +161,9 @@ def train(
     model.train()
     best_val_loss = None
     data_iter = iter(dataloader)
+    total_loss = 0
     for global_step in tqdm(range(training_steps)):
-        total_loss = 0
+
         try:
             input_ids, target_ids = next(data_iter)
         except StopIteration:
@@ -215,18 +216,23 @@ def compress(model, input_ids, target_ids):
     sentinel_active = True
     for i in range(len(correct)):
         orig_line = [chr(input_ids[i][0].item())]
-        next_line = [input_ids[i][0].item()]
+        compressed_line = [input_ids[i][0].item()]
+
         for j in range(len(correct[i])):
             if target_ids[i][j] >= 0:
                 orig_line.append(chr(target_ids[i][j].item()))
                 if not correct[i][j]:
-                    next_line.append(target_ids[i][j].item())
+                    compressed_line.append(target_ids[i][j].item())
                     sentinel_active = True
                 elif sentinel_active:
-                    next_line[-1] += 256
-                    sentinel_active = False
-        text.append("".join([chr(code) for code in next_line]))
+                    compressed_line.append(128512)
+                    # compressed_line[-1] += 256
+                    # sentinel_active = False
+        text.append("".join([chr(code) for code in compressed_line]))
         orig.append("".join(orig_line))
+    print(text)
+    print(orig)
+    exit()
     return text
 
 
@@ -256,7 +262,7 @@ loader = DataLoader(
 val_dataset = FileBasedLMData(CORPORA["dev"], max_length=1024)
 val_loader = DataLoader(
     val_dataset,
-    batch_size=64,
+    batch_size=2,
     collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
 )
 vocab_size = 256
@@ -271,5 +277,15 @@ model = DecoderOnlyTransformer(
     max_len=1024,
 ).to(device)
 optimizer = Adam(model.parameters(), lr=1e-4)
-train(model, loader, optimizer, val_loader, model_dir="experiments/autocomplete-v1")
-# tokenize(model, loader, model_dir="autocomplete-v5")
+# train(
+#     model,
+#     loader,
+#     optimizer,
+#     val_loader,
+#     model_dir="/mnt/storage/hopkins/thesis/thesis-wexler/experiments/autocomplete-v1",
+# )
+tokenize(
+    model,
+    val_loader,
+    model_dir="/mnt/storage/hopkins/thesis/thesis-wexler/experiments/autocomplete-v1",
+)
