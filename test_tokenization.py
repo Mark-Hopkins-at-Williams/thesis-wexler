@@ -1,6 +1,6 @@
 import unittest
 from tokenization import NllbTokenizer
-from tokenization import ByteTokenizer
+from tokenization import ByteTokenizer, SentinelTokenizer
 from torch import tensor
 
 
@@ -137,6 +137,15 @@ class TestTokenization(unittest.TestCase):
             ]
         }
         self.assertEqual(tokenized["input_ids"].tolist(), expected["input_ids"])
+
+    def test_byte_tokenizer6(self):
+        tokenizer = SentinelTokenizer(offset=0)
+        lines = ["c😀a😀t😀", "dog😀s"]
+        tokenized = tokenizer(lines, lang_code="fra_Latn")
+        lang_id = tokenizer.get_special_tokens()["fra_Latn"]
+        eos = tokenizer.get_special_tokens()["<eos>"]
+        pad = tokenizer.get_special_tokens()["<pad>"]
+        print(tokenized["input_ids"].tolist())
 
 
 if __name__ == "__main__":

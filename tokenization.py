@@ -111,6 +111,98 @@ class ByteTokenizer:
         return results
 
 
+class SentinelTokenizer:
+    def __init__(self, encoding="utf-8", max_length=None, offset=0):
+        # define full vocabulary for eng-fra
+        self.beg_token = "<bos>"
+        self.end_token = "<eos>"
+        self.pad_token = "<pad>"
+        self.mask_token = "<mask>"
+        self.autocomplete_token = "😀"
+        self.special_tokens = [
+            self.beg_token,
+            self.end_token,
+            self.pad_token,
+            self.mask_token,
+            self.autocomplete_token,
+            "eng_Latn",
+            "fra_Latn",
+        ]
+        self.vocab = [f"{i:02x}" for i in range(256)] + self.special_tokens
+        self.max_length = max_length
+
+        # assign and store ID for each token (+ reverse)
+        self.mappings = {}  # byte -> ID
+        self.reverse_mappings = {}  # ID -> byte
+        i = offset
+        for byte in self.vocab:
+            self.mappings[byte] = i
+            i = i + 1
+        self.reverse_mappings = {v: k for k, v in self.mappings.items()}
+        self.offset = offset
+
+    def __call__(self, sents: List[str], lang_code="eng_Latn"):
+        self.src_lang = lang_code
+
+        encoded = []
+        for sent in sents:
+            subsents = sent.split(self.autocomplete_token)
+            tokens = []
+            for subsent in subsents[:-1]:
+                tokens.extend([self.offset + byte for byte in subsent.encode()])
+                tokens.append(self.mappings[self.autocomplete_token])
+            if len(subsents[-1]) != 0:  # sent didn't end with autocomplete
+                tokens.extend([self.offset + byte for byte in subsents[-1].encode()])
+            ids = torch.tensor(
+                [self.mappings[self.src_lang]]
+                + tokens
+                + [self.mappings[self.end_token]],
+                dtype=torch.long,
+            )
+            if (
+                self.max_length != None and ids.size(0) > self.max_length
+            ):  # truncate sequences that are too long
+                ids = ids[: self.max_length]
+                ids[self.max_length - 1] = self.mappings[
+                    self.end_token
+                ]  # insert EOS token in truncated sequences
+            encoded.append(ids)
+
+        # Pad all sequences to the same length
+        input_ids = pad_sequence(
+            encoded, batch_first=True, padding_value=self.mappings[self.pad_token]
+        )
+        # Create attention mask (1 where token is not PAD)
+        attention_mask = (input_ids != self.mappings[self.pad_token]).long()
+
+        return BatchEncoding(
+            {"input_ids": input_ids, "attention_mask": attention_mask}, tensor_type="pt"
+        )
+
+    def __len__(self):
+        return 256 + len(self.special_tokens)
+
+    def get_special_tokens(self):
+        return {tok: self.mappings[tok] for tok in self.special_tokens}
+
+    def batch_decode(self, token_ids):
+        results = []  # list of strings, each of which is decoded sentence
+
+        non_printables = set(self.special_tokens)
+
+        for sent in token_ids:
+            # Convert all token IDs in one go
+            decoded_tokens = [self.reverse_mappings[id.item()] for id in sent]
+
+            # Filter out special tokens and make string representation
+            decoded = " ".join(
+                tok for tok in decoded_tokens if tok not in non_printables
+            )
+            results.append(decoded)
+
+        return results
+
+
 class CharacterTokenizer(Tokenizer):
 
     def __init__(self, max_length=None, offset=0):
