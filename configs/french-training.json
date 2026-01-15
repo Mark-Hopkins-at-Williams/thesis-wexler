@@ -2,7 +2,7 @@
     "model_dir": "models/french-training",
     "finetuning_parameters": {
         "base_model": "facebook/nllb-200-distilled-600M",
-        "src_tokenizer": "byte",
+        "src_tokenizer": "sentinel",
         "max_src_length": 512,
         "tgt_tokenizer": "default",
         "max_tgt_length": 128,
@@ -10,16 +10,16 @@
         "freeze_encoder": false,
         "freeze_decoder": false,
         "batch_size": 32,
-        "num_steps": 550,
+        "num_steps": 100000,
         "patience": 1000000000
     },
     "corpora": {
         "fr-eng": {
             "eng": {
                 "lang_code": "eng_Latn",
-                "train": "/mnt/storage/swexler/thesis-wexler/examples/french-data-18-mil/organized/train.eng",
-                "dev": "/mnt/storage/swexler/thesis-wexler/examples/french-model_10_28_25/fr-en/dev.eng",
-                "test": "/mnt/storage/swexler/thesis-wexler/examples/french-model_10_28_25/fr-en/test.eng",
+                "train": "/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_1_11_26/compressed-train-short.eng",
+                "dev": "/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_1_11_26/compressed-dev.eng",
+                "test": "/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_1_11_26/compressed-test.eng",
                 "permutation": 0
             },
             "fr": {

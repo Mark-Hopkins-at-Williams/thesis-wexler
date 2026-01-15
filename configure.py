@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from permutations import create_random_permutation_with_fixed_points
 import shutil
-from tokenization import NllbTokenizer, HuggingfaceTokenizer, CharacterTokenizer, ByteTokenizer
+from tokenization import NllbTokenizer, HuggingfaceTokenizer, CharacterTokenizer, ByteTokenizer, SentinelTokenizer
 
 
 @dataclass
@@ -99,6 +99,8 @@ def initialize_tokenizers(ft_params):
             tokenizers[(tokenizer_type, max_length)] = CharacterTokenizer(max_length=max_length, offset=offset)
         if tokenizer_type == "byte":
             tokenizers[(tokenizer_type, max_length)] = ByteTokenizer(max_length=max_length, offset=offset)
+        if tokenizer_type == "sentinel":
+            tokenizers[(tokenizer_type, max_length)] = SentinelTokenizer(max_length=max_length, offset=offset)
     src_tokenizer = tokenizers[(ft_params.src_tokenizer, ft_params.max_src_length)]
     tgt_tokenizer = tokenizers[(ft_params.tgt_tokenizer, ft_params.max_tgt_length)]
     return src_tokenizer, tgt_tokenizer

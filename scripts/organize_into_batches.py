@@ -33,11 +33,11 @@ def reorganize(batch_size, root_dir, split, output_dir):
     """
     
     os.mkdir(output_dir)
-    files = list(root_dir.glob(f"{split}.*"))
+    files = list(root_dir.glob(f"*{split}.*"))
     model_name = "facebook/nllb-200-distilled-600M"
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     lengths = []
-    with open(root_dir / f"{split}.eng") as reader:
+    with open(root_dir / f"compressed-{split}.eng", encoding="utf-8") as reader:
         for i, line in tqdm(enumerate(reader)):
             line = line.strip()
             tokens = tokenizer(line)["input_ids"]
@@ -53,10 +53,10 @@ def reorganize(batch_size, root_dir, split, output_dir):
 
     for file in files:
         lines = []
-        with open(file) as reader:
+        with open(file, encoding="utf-8") as reader:
             for line in tqdm(reader):
                 lines.append(line.strip())
-        with open(output_dir / file.name, "w") as writer:
+        with open(output_dir / file.name, "w", encoding="utf-8") as writer:
             for num in tqdm(line_nums):
                 writer.write(lines[num] + "\n")
 
@@ -69,4 +69,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     in_dir = Path(args.in_dir)        
     out_dir = Path(args.out_dir)  
-    reorganize(args.batch_size, in_dir, "train", out_dir)
+    reorganize(args.batch_size, in_dir, "train-7m", out_dir)

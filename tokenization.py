@@ -7,6 +7,7 @@ from abc import abstractmethod
 import torch
 from torch.nn.utils.rnn import pad_sequence
 from transformers.tokenization_utils_base import BatchEncoding
+import re
 
 
 class Tokenizer(ABC):
@@ -27,7 +28,7 @@ class Tokenizer(ABC):
         pass
 
 
-class ByteTokenizer:
+class ByteTokenizer(Tokenizer):
     def __init__(self, encoding="utf-8", max_length=None, offset=0):
         # define full vocabulary for eng-fra
         self.beg_token = "<bos>"
@@ -111,7 +112,7 @@ class ByteTokenizer:
         return results
 
 
-class SentinelTokenizer:
+class SentinelTokenizer(Tokenizer):
     def __init__(self, encoding="utf-8", max_length=None, offset=0):
         # define full vocabulary for eng-fra
         self.beg_token = "<bos>"
@@ -146,13 +147,17 @@ class SentinelTokenizer:
 
         encoded = []
         for sent in sents:
-            subsents = sent.split(self.autocomplete_token)
+            itemized = re.split(f"({re.escape(self.autocomplete_token)})", sent) # () means keep smileys in the list
             tokens = []
-            for subsent in subsents[:-1]:
-                tokens.extend([self.offset + byte for byte in subsent.encode()])
+            for part in itemized:
+              if part == self.autocomplete_token:
                 tokens.append(self.mappings[self.autocomplete_token])
-            if len(subsents[-1]) != 0:  # sent didn't end with autocomplete
-                tokens.extend([self.offset + byte for byte in subsents[-1].encode()])
+              else:
+                sub_pattern = r"\\x([0-9a-fA-F]{2})"
+                for m in re.finditer(sub_pattern, part): # in case 'hint' is multiple chars long
+                  h = m.group(1)  # m.group(1) is the hex digits
+                  tokens.append(self.mappings[h]) # h = something like 4e
+
             ids = torch.tensor(
                 [self.mappings[self.src_lang]]
                 + tokens
@@ -189,6 +194,7 @@ class SentinelTokenizer:
         results = []  # list of strings, each of which is decoded sentence
 
         non_printables = set(self.special_tokens)
+        non_printables.remove(self.autocomplete_token)
 
         for sent in token_ids:
             # Convert all token IDs in one go
