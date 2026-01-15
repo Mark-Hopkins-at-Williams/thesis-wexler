@@ -138,14 +138,32 @@ class TestTokenization(unittest.TestCase):
         }
         self.assertEqual(tokenized["input_ids"].tolist(), expected["input_ids"])
 
-    def test_byte_tokenizer6(self):
+    def test_sentinel_tokenizer1(self):
         tokenizer = SentinelTokenizer(offset=0)
-        lines = ["c😀a😀t😀", "dog😀s"]
+        lines = [
+            r"\x54😀\x74\x72\x65\x6e😀",
+            r"\x41\x6e\x64😀\x47\x6c",
+        ]
         tokenized = tokenizer(lines, lang_code="fra_Latn")
         lang_id = tokenizer.get_special_tokens()["fra_Latn"]
         eos = tokenizer.get_special_tokens()["<eos>"]
         pad = tokenizer.get_special_tokens()["<pad>"]
-        print(tokenized["input_ids"].tolist())
+        sentinel = tokenizer.get_special_tokens()["😀"]
+        expected = {
+            "input_ids": tensor(
+                [
+                    [lang_id, 0x54, sentinel, 0x74, 0x72, 0x65, 0x6E, sentinel, eos],
+                    [lang_id, 0x41, 0x6E, 0x64, sentinel, 0x47, 0x6C, eos, pad],
+                ]
+            ),
+            "attention_mask": tensor([[1] * 9, [1] * 8 + [0]]),
+        }
+        self.assertEqual(
+            tokenized["input_ids"].tolist(), expected["input_ids"].tolist()
+        )
+        self.assertEqual(
+            tokenized["attention_mask"].tolist(), expected["attention_mask"].tolist()
+        )
 
 
 if __name__ == "__main__":
