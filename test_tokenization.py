@@ -1,6 +1,6 @@
 import unittest
 from tokenization import NllbTokenizer
-from tokenization import ByteTokenizer, SentinelTokenizer
+from tokenization import ByteTokenizer, SentinelTokenizer, CharacterTokenizer
 from torch import tensor
 
 
@@ -138,6 +138,88 @@ class TestTokenization(unittest.TestCase):
         }
         self.assertEqual(tokenized["input_ids"].tolist(), expected["input_ids"])
 
+    def test_byte_tokenizer6(self):
+        tokenizer = ByteTokenizer(offset=100, max_length=4)
+        lines = ["cat", "d"]
+        tokenized = tokenizer(lines, lang_code="fra_Latn")
+        lang_id = tokenizer.get_special_tokens()["fra_Latn"]
+        eos = tokenizer.get_special_tokens()["<eos>"]
+        pad = tokenizer.get_special_tokens()["<pad>"]
+        expected = {
+            "input_ids": [
+                [lang_id, 199, 197, eos],
+                [lang_id, 200, eos, pad],
+            ]
+        }
+        self.assertEqual(tokenized["input_ids"].tolist(), expected["input_ids"])
+
+    def test_byte_tokenizer7(self):
+      tokenizer = ByteTokenizer(offset=100, max_length=4)
+      self.assertEqual(len(tokenizer), 262)
+
+    def test_byte_tokenizer8(self):
+      tokenizer = ByteTokenizer(max_length = 100, offset=50)
+      lines = ["helLo", "goodbye 我"]
+      tokenized = tokenizer(lines, lang_code="fra_Latn")
+      lang_id = tokenizer.get_special_tokens()["fra_Latn"]
+      eos = tokenizer.get_special_tokens()["<eos>"]
+      pad = tokenizer.get_special_tokens()["<pad>"]
+      expected = {
+            "input_ids": [
+                [lang_id, 154, 151, 158, 126, 161, eos, pad, pad, pad, pad, pad, pad],
+                [lang_id, 153, 161, 161, 150, 148, 171, 151, 82, 280, 186, 195, eos]
+            ]
+        }
+      self.assertEqual(tokenized["input_ids"].tolist(), expected["input_ids"])
+
+    def test_char_tokenizer1(self):
+        tokenizer = CharacterTokenizer()
+        lines = ["helLo", "goodbye 我"]
+        tokenized = tokenizer(lines, lang_code="fra_Latn")
+        lang_id = tokenizer.get_special_tokens()["fra_Latn"]
+        eos = tokenizer.get_special_tokens()["<eos>"]
+        pad = tokenizer.get_special_tokens()["<pad>"]
+        unk = tokenizer.get_special_tokens()["<unk>"]
+        expected = {
+            "input_ids": [
+                [lang_id, 24, 21, 28, 54, 31, eos, pad, pad, pad, pad],
+                [lang_id, 23, 31, 31, 20, 18, 41, 21, 108, unk, eos],
+            ]
+        }
+        self.assertEqual(tokenized["input_ids"].tolist(), expected["input_ids"])
+
+    def test_char_tokenizer2(self):
+        tokenizer = CharacterTokenizer(max_length = 5, offset=50)
+        lines = ["helLo", "goodbye 我"]
+        tokenized = tokenizer(lines, lang_code="fra_Latn")
+        lang_id = tokenizer.get_special_tokens()["fra_Latn"]
+        eos = tokenizer.get_special_tokens()["<eos>"]
+        pad = tokenizer.get_special_tokens()["<pad>"]
+        unk = tokenizer.get_special_tokens()["<unk>"]
+        expected = {
+            "input_ids": [
+                [lang_id, 74, 71, 78, eos],
+                [lang_id, 73, 81, 81, eos],
+            ]
+        }
+        self.assertEqual(tokenized["input_ids"].tolist(), expected["input_ids"])
+
+    def test_char_tokenizer3(self):
+        tokenizer = CharacterTokenizer(max_length = 7, offset=50)
+        lines = ["helLo", "goodbye 我"]
+        tokenized = tokenizer(lines, lang_code="fra_Latn")
+        lang_id = tokenizer.get_special_tokens()["fra_Latn"]
+        eos = tokenizer.get_special_tokens()["<eos>"]
+        pad = tokenizer.get_special_tokens()["<pad>"]
+        unk = tokenizer.get_special_tokens()["<unk>"]
+        expected = {
+            "input_ids": [
+                [lang_id, 74, 71, 78, 104, 81, eos],
+                [lang_id, 73, 81, 81, 70, 68, eos]
+            ]
+        }
+        self.assertEqual(tokenized["input_ids"].tolist(), expected["input_ids"])
+
     def test_sentinel_tokenizer1(self):
         tokenizer = SentinelTokenizer(offset=0)
         lines = [
@@ -165,6 +247,63 @@ class TestTokenization(unittest.TestCase):
             tokenized["attention_mask"].tolist(), expected["attention_mask"].tolist()
         )
 
+    def test_sentinel_tokenizer2(self):
+        tokenizer = SentinelTokenizer()
+        lines = [
+            r"\x54\x74\x72\x65\x6e\x6e",
+            r"\x41\x6e\x64\x47\x6c",
+        ]
+        tokenized = tokenizer(lines, lang_code="fra_Latn")
+        lang_id = tokenizer.get_special_tokens()["fra_Latn"]
+        eos = tokenizer.get_special_tokens()["<eos>"]
+        pad = tokenizer.get_special_tokens()["<pad>"]
+        sentinel = tokenizer.get_special_tokens()["😀"]
+        expected = {
+            "input_ids": tensor(
+                [
+                    [lang_id, 0x54, 0x74, 0x72, 0x65, 0x6E, 0x6E, eos],
+                    [lang_id, 0x41, 0x6E, 0x64, 0x47, 0x6C, eos, pad],
+                ]
+            ),
+            "attention_mask": tensor([[1] * 8, [1] * 7 + [0]]),
+        }
+        self.assertEqual(
+            tokenized["input_ids"].tolist(), expected["input_ids"].tolist()
+        )
+        self.assertEqual(
+            tokenized["attention_mask"].tolist(), expected["attention_mask"].tolist()
+        )
+
+    def test_sentinel_tokenizer3(self):
+        tokenizer = SentinelTokenizer(offset=50, max_length=5)
+        lines = [
+            r"\x54😀",
+            r"\x41\x6e\x64😀\x47\x6c",
+        ]
+        tokenized = tokenizer(lines, lang_code="fra_Latn")
+        lang_id = tokenizer.get_special_tokens()["fra_Latn"]
+        eos = tokenizer.get_special_tokens()["<eos>"]
+        pad = tokenizer.get_special_tokens()["<pad>"]
+        sentinel = tokenizer.get_special_tokens()["😀"]
+        expected = {
+            "input_ids": tensor(
+                [
+                    [lang_id, 0x86, sentinel, eos, pad],
+                    [lang_id, 0x73, 0xA0, 0x96, eos],
+                ]
+            ),
+            "attention_mask": tensor([[1] * 4 + [0], [1] * 5]),
+        }
+        self.assertEqual(
+            tokenized["input_ids"].tolist(), expected["input_ids"].tolist()
+        )
+        self.assertEqual(
+            tokenized["attention_mask"].tolist(), expected["attention_mask"].tolist()
+        )
+
+    def test_sentinel_tokenizer4(self):
+      tokenizer = SentinelTokenizer()
+      self.assertEqual(len(tokenizer), 263)
 
 if __name__ == "__main__":
     unittest.main()
