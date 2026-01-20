@@ -28,9 +28,12 @@ class FileBasedLMData(IterableDataset):
     def __iter__(self):
         for line in open(self.filepath, "r"):
             tokens = self.parse_line(line)
+            #print(f"TOKENS={chr(tokens[0])}")
             if len(tokens) < 2:
-                input_ids = torch.tensor([0], dtype=torch.long)
-                target_ids = torch.tensor([-100], dtype=torch.long)
+                input_ids = torch.tensor([tokens[0]], dtype=torch.long)
+                target_ids = torch.tensor([], dtype=torch.long)
+                print(f"input_ids={input_ids}")
+                print(f"target_ids={target_ids}")
                 yield input_ids, target_ids  # nothing to predict but need to keep files parallel
                 continue
             chunk = tokens[: self.max_length]
@@ -124,6 +127,9 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:, : x.size(1)]
         return self.dropout(x)
 
+def get_total_lines(filepath):
+    with open(filepath, 'rb') as f:
+        return sum(1 for _ in f)
 
 @torch.no_grad()
 def evaluate(model, dataloader):
@@ -222,16 +228,18 @@ def compress(model, input_ids, target_ids, output_style=""):
     text = []
     orig = []
     sentinel_active = True
+    print(f"input_ids {input_ids}")
     for i in range(len(correct)): # each example in batch
 
         # If it's a dummy/empty line
-        if torch.all(target_ids[i] == -100):
+        if torch.all(input_ids[i] == -100):
             print("ALL PADDING")
             text.append("") 
             orig.append("")
             continue
 
         orig_line = [chr(input_ids[i][0].item())] # original sentence (here just 1st char)
+        print(f"orig_line={orig_line}")
         compressed_line = [input_ids[i][0].item()] # compressed representation (here just 1st char)
 
         for j in range(len(correct[i])): # each character in the example 
@@ -269,13 +277,16 @@ def tokenize(model, loader, model_dir, output_dir, examples_type, output_style="
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
     print('BEGINNING COMPRESSION')
+
+    total_lines = get_total_lines(loader.dataset.filepath)
+    total_batches = math.ceil(total_lines / loader.batch_size)
+
     with open(output_dir+"/compressed-"+examples_type+output_style+".eng", "w") as writer:
-        for input_ids, target_ids in tqdm(loader):
+        for input_ids, target_ids in tqdm(loader, total=total_batches):
             compressed = compress(model, input_ids, target_ids, output_style)
             for line in compressed:
                 writer.write(f"{line}\n")
-            
-
+          
 
 # dataset = StreamingDatasetLMData('allenai/c4', 'en', 'train', max_length=1024)
 train_dataset = FileBasedLMData(CORPORA["train"], max_length=1024)
@@ -326,38 +337,54 @@ print("BEGINNING TOKENIZATION")
 #     model,
 #     val_loader,
 #     model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v2",
-#     output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_1_11_26",
-#     examples_type="dev"
+#     output_dir="/mnt/storage/swexler/thesis-wexler/examples/one-char-examining",
+#     examples_type="dev",
+#     output_style="-short"
 # )
 # tokenize(
 #     model,
 #     test_loader,
 #     model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v2",
-#     output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_1_11_26",
+#     output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-byte-data",
 #     examples_type="test"
 # )
 
-# Long version: 1 emoji per correct guess
+# # Long version: 1 emoji per correct guess
 # tokenize(
 #     model,
 #     train_loader,
-#     output_style="-long",
+#     # output_style="-long",
 #     model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v2",
-#     output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_1_11_26",
+#     output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-byte-data",
 #     examples_type="train"
 # )
 
 # Short version: 1 emoji per run of correct guesses
+# tokenize(
+#     model,
+#     train_loader,
+#     model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v2",
+#     output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_1_11_26",
+#     examples_type="train",
+#     output_style="-short"
+# )
+
+
+dummy_dataset = FileBasedLMData("/mnt/storage/swexler/thesis-wexler/examples/one-char-examining/one-char.eng", max_length=1024)
+dummy_loader = DataLoader(
+    dummy_dataset,
+    batch_size=2,
+    num_workers=0,
+    collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
+)
 tokenize(
     model,
-    train_loader,
+    dummy_loader,
     model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v2",
-    output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_1_11_26",
-    examples_type="train",
-    output_style="-short"
+    output_dir="/mnt/storage/swexler/thesis-wexler/examples/one-char-examining",
+    examples_type="dummy",
+    output_style="-long"
 )
-
-
 
 ##### EVALUATION
 # model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v2"
