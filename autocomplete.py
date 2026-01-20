@@ -28,7 +28,7 @@ class FileBasedLMData(IterableDataset):
     def __iter__(self):
         for line in open(self.filepath, "r"):
             tokens = self.parse_line(line)
-            #print(f"TOKENS={chr(tokens[0])}")
+            # print(f"TOKENS={chr(tokens[0])}")
             if len(tokens) < 2:
                 input_ids = torch.tensor([tokens[0]], dtype=torch.long)
                 target_ids = torch.tensor([], dtype=torch.long)
@@ -60,11 +60,12 @@ class StreamingDatasetLMData(IterableDataset):
                 chunk = tokens[: self.max_length]
 
                 # all 'starting letters' (each character of an example minus the last) (each elem is hex byte)
-                input_ids = torch.tensor(chunk[:-1], dtype=torch.long) 
+                input_ids = torch.tensor(chunk[:-1], dtype=torch.long)
 
                 # all 'predicted letters' (each character of an example beginning from the second) (each elem is hex byte)
                 target_ids = torch.tensor(chunk[1:], dtype=torch.long)
                 yield input_ids, target_ids
+
 
 # combining function - mainly does padding
 def collate_causal_lm(batch, pad_token_id=0):
@@ -127,9 +128,11 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:, : x.size(1)]
         return self.dropout(x)
 
+
 def get_total_lines(filepath):
-    with open(filepath, 'rb') as f:
+    with open(filepath, "rb") as f:
         return sum(1 for _ in f)
+
 
 @torch.no_grad()
 def evaluate(model, dataloader):
@@ -142,15 +145,23 @@ def evaluate(model, dataloader):
         input_ids = input_ids.to(device)
         target_ids = target_ids.to(device)
 
-        logits = model(input_ids)  # (B, T, vocab_size) = batch size rows, # of tokens length, vocab size depth (logit for each letter)
+        logits = model(
+            input_ids
+        )  # (B, T, vocab_size) = batch size rows, # of tokens length, vocab size depth (logit for each letter)
         loss = F.cross_entropy(
             logits.view(-1, logits.size(-1)), target_ids.view(-1), reduction="sum"
         )
 
         # Compute predictions and accuracy
-        preds = logits.argmax(dim=-1)  # (B, T) = batch size rows, # of tokens length where each item is most probable char
-        mask = target_ids != -100  # an example doesn't know its padded --> ignore padding positions
-        correct = (preds == target_ids) & mask # Boolean 2d array of each char where item is True if prediction is correct
+        preds = logits.argmax(
+            dim=-1
+        )  # (B, T) = batch size rows, # of tokens length where each item is most probable char
+        mask = (
+            target_ids != -100
+        )  # an example doesn't know its padded --> ignore padding positions
+        correct = (
+            preds == target_ids
+        ) & mask  # Boolean 2d array of each char where item is True if prediction is correct
         # & mask part allows it to ignore masked tokens
 
         total_correct += correct.sum().item()
@@ -159,8 +170,11 @@ def evaluate(model, dataloader):
 
     model.train()
     avg_loss = total_loss / total_tokens
-    accuracy = total_correct / total_tokens # % of next tokens the model predicted correctly
+    accuracy = (
+        total_correct / total_tokens
+    )  # % of next tokens the model predicted correctly
     return avg_loss, accuracy
+
 
 # does training loop and updates saved model if applicable during evaluation periods
 def train(
@@ -174,12 +188,12 @@ def train(
 ):
     model.train()
     best_val_loss = None
-    data_iter = iter(dataloader) # dataloader is batched
+    data_iter = iter(dataloader)  # dataloader is batched
     total_loss = 0
     for global_step in tqdm(range(training_steps)):
 
         try:
-            input_ids, target_ids = next(data_iter) # these are 2d bc they are batched
+            input_ids, target_ids = next(data_iter)  # these are 2d bc they are batched
         except StopIteration:
             data_iter = iter(dataloader)
             input_ids, target_ids = next(data_iter)
@@ -187,7 +201,9 @@ def train(
         target_ids = target_ids.to(device)
         optimizer.zero_grad()
         logits = model(input_ids)
-        loss = F.cross_entropy(logits.view(-1, logits.size(-1)), target_ids.view(-1)) # loss between predictions and target IDs {-log prob of correct token} --> doing for a whole sentence at once
+        loss = F.cross_entropy(
+            logits.view(-1, logits.size(-1)), target_ids.view(-1)
+        )  # loss between predictions and target IDs {-log prob of correct token} --> doing for a whole sentence at once
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
@@ -224,42 +240,53 @@ def compress(model, input_ids, target_ids, output_style=""):
     logits = model(input_ids)  # (B, T, vocab_size)
     preds = logits.argmax(dim=-1)  # (B, T)
     mask = target_ids == -100  # ignore padding positions
-    correct = (preds == target_ids) | mask # our end goal here is to identify all the characters we mispredicted -- padding is kind of neutral so we leave it in {we care about the 0s here}
+
+    correct = (
+        preds == target_ids
+    ) | mask  # our end goal here is to identify all the characters we mispredicted -- padding is kind of neutral so we leave it in {we care about the 0s here}
     text = []
     orig = []
-    sentinel_active = True
-    print(f"input_ids {input_ids}")
-    for i in range(len(correct)): # each example in batch
 
+    for i in range(len(correct)):  # each example in batch
+        sentinel_active = True
         # If it's a dummy/empty line
-        if torch.all(input_ids[i] == -100):
+        if torch.all(input_ids[i] == 0):
             print("ALL PADDING")
-            text.append("") 
+            text.append("")
             orig.append("")
             continue
 
-        orig_line = [chr(input_ids[i][0].item())] # original sentence (here just 1st char)
+        orig_line = [
+            chr(input_ids[i][0].item())
+        ]  # original sentence (here just 1st char)
         print(f"orig_line={orig_line}")
-        compressed_line = [input_ids[i][0].item()] # compressed representation (here just 1st char)
 
-        for j in range(len(correct[i])): # each character in the example 
-            if target_ids[i][j] >= 0: # filter out padding from condensed rep. (they are now lumped into correct)
-                orig_line.append(chr(target_ids[i][j].item())) # add char to the original example
+        compressed_line = [
+            input_ids[i][0].item()
+        ]  # compressed representation (here just 1st char)
+
+        for j in range(len(correct[i])):  # each character in the example
+            if (
+                target_ids[i][j] >= 0
+            ):  # filter out padding from condensed rep. (they are now lumped into correct)
+                orig_line.append(
+                    chr(target_ids[i][j].item())
+                )  # add char to the original example
                 # chr(100) gives the character w unicode code point 100
                 if not correct[i][j]:
                     compressed_line.append(target_ids[i][j].item())
                     sentinel_active = True
-                elif sentinel_active: # we got it and need to add an emoji
+                elif sentinel_active:  # we got it and need to add an emoji
                     compressed_line.append(128512)
                     # compressed_line[-1] += 256
                     if output_style == "-short":
-                      sentinel_active = False # replaces a whole string of correct predictions with just one emoji, rather than one emoji per character
+                        sentinel_active = False  # replaces a whole string of correct predictions with just one emoji, rather than one emoji per character
         condensed_line_str = ""
         for item in compressed_line:
-          if item != 128512:
-            condensed_line_str += f"\\x{item:02x}"
-          else:
-            condensed_line_str = condensed_line_str + chr(128512)
+            if item != 128512:
+                condensed_line_str += f"\\x{item:02x}"
+            else:
+                condensed_line_str = condensed_line_str + chr(128512)
         text.append(condensed_line_str)
         orig.append("".join(orig_line))
     # print(text)
@@ -267,7 +294,7 @@ def compress(model, input_ids, target_ids, output_style=""):
     return text
 
 
-# "wrapper method" of sorts for creating condensed representations 
+# "wrapper method" of sorts for creating condensed representations
 # initalizes model as best model from training then calls compress() repeatedly on batches of examples
 def tokenize(model, loader, model_dir, output_dir, examples_type, output_style=""):
     checkpoint = torch.load(
@@ -276,17 +303,23 @@ def tokenize(model, loader, model_dir, output_dir, examples_type, output_style="
     model.load_state_dict(checkpoint["model_state_dict"])
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
-    print('BEGINNING COMPRESSION')
+    print("BEGINNING COMPRESSION")
 
     total_lines = get_total_lines(loader.dataset.filepath)
     total_batches = math.ceil(total_lines / loader.batch_size)
 
-    with open(output_dir+"/compressed-"+examples_type+output_style+".eng", "w") as writer:
+    with open(
+        output_dir + "/compressed-" + examples_type + output_style + ".eng", "w"
+    ) as writer:
         for input_ids, target_ids in tqdm(loader, total=total_batches):
+            print("my input ids:")
+            print(input_ids)
+            print("my target ids:")
+            print(target_ids)
             compressed = compress(model, input_ids, target_ids, output_style)
             for line in compressed:
                 writer.write(f"{line}\n")
-          
+
 
 # dataset = StreamingDatasetLMData('allenai/c4', 'en', 'train', max_length=1024)
 train_dataset = FileBasedLMData(CORPORA["train"], max_length=1024)
@@ -310,7 +343,7 @@ test_loader = DataLoader(
     num_workers=0,
     collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
 )
-vocab_size = 263 # 256 + bos + eos + pad + mask + eng + fra + autocomplete
+vocab_size = 263  # 256 + bos + eos + pad + mask + eng + fra + autocomplete
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = DecoderOnlyTransformer(
     vocab_size,
@@ -370,7 +403,10 @@ print("BEGINNING TOKENIZATION")
 # )
 
 
-dummy_dataset = FileBasedLMData("/mnt/storage/swexler/thesis-wexler/examples/one-char-examining/one-char.eng", max_length=1024)
+dummy_dataset = FileBasedLMData(
+    "examples/one-char-examining/one-char.eng",
+    max_length=1024,
+)
 dummy_loader = DataLoader(
     dummy_dataset,
     batch_size=2,
@@ -381,9 +417,9 @@ tokenize(
     model,
     dummy_loader,
     model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v2",
-    output_dir="/mnt/storage/swexler/thesis-wexler/examples/one-char-examining",
+    output_dir="examples/one-char-examining",
     examples_type="dummy",
-    output_style="-long"
+    output_style="-short",
 )
 
 ##### EVALUATION
