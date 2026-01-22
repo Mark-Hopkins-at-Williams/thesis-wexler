@@ -232,8 +232,7 @@ def train(
 @torch.no_grad()
 def compress(model, input_ids, target_ids, output_style=""):
     model.eval()
-    input_ids = input_ids.to(device)
-    target_ids = target_ids.to(device)
+
     logits = model(input_ids)  # (B, T, vocab_size)
     preds = logits.argmax(dim=-1)  # (B, T)
     mask = target_ids == -100  # ignore padding positions
@@ -305,117 +304,116 @@ def tokenize(model, loader, model_dir, output_dir, examples_type, output_style="
     total_batches = math.ceil(total_lines / loader.batch_size)
 
     if output_style != "":
-      output_style = "-"+output_style
+        output_style = "-" + output_style
 
     os.makedirs(output_dir, exist_ok=True)
     output_filename = f"compressed-{examples_type}{output_style}.eng"
     output_path = os.path.join(output_dir, output_filename)
 
-    with open(
-        output_path, "w"
-    ) as writer:
+    with open(output_path, "w") as writer:
         for input_ids, target_ids in tqdm(loader, total=total_batches):
             compressed = compress(model, input_ids, target_ids, output_style)
             for line in compressed:
                 writer.write(f"{line}\n")
 
 
-# dataset = StreamingDatasetLMData('allenai/c4', 'en', 'train', max_length=1024)
-train_dataset = FileBasedLMData(CORPORA["train"], max_length=1024)
-train_loader = DataLoader(
-    train_dataset,
-    batch_size=64,
-    num_workers=0,
-    collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
-)
-val_dataset = FileBasedLMData(CORPORA["dev"], max_length=1024)
-val_loader = DataLoader(
-    val_dataset,
-    batch_size=2,
-    num_workers=0,
-    collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
-)
-test_dataset = FileBasedLMData(CORPORA["test"], max_length=1024)
-test_loader = DataLoader(
-    test_dataset,
-    batch_size=2,
-    num_workers=0,
-    collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
-)
-vocab_size = 263  # 256 + bos + eos + pad + mask + eng + fra + autocomplete
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = DecoderOnlyTransformer(
-    vocab_size,
-    d_model=1024,
-    nhead=16,
-    num_layers=6,
-    dim_feedforward=512,
-    dropout=0.1,
-    max_len=1024,
-).to(device)
-optimizer = Adam(model.parameters(), lr=1e-4)
-# print("BEGINNING TRAINING")
-# train(
-#     model,
-#     train_loader,
-#     optimizer,
-#     val_loader,
-#     model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v3",
-#     training_steps=50000,
-#     val_interval=500
-# ) 
-print("BEGINNING TOKENIZATION")
-tokenize(
-    model,
-    val_loader,
-    model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v3",
-    output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-18m-compressed_1_20_26",
-    examples_type="dev",
-    output_style="short"
-)
-tokenize(
-    model,
-    test_loader,
-    model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v3",
-    output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-18m-compressed_1_20_26",
-    examples_type="test",
-    output_style="short"
-)
+if __name__ == "__main__":
+    # dataset = StreamingDatasetLMData('allenai/c4', 'en', 'train', max_length=1024)
+    train_dataset = FileBasedLMData(CORPORA["train"], max_length=1024)
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=64,
+        num_workers=0,
+        collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
+    )
+    val_dataset = FileBasedLMData(CORPORA["dev"], max_length=1024)
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=2,
+        num_workers=0,
+        collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
+    )
+    test_dataset = FileBasedLMData(CORPORA["test"], max_length=1024)
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=2,
+        num_workers=0,
+        collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
+    )
+    vocab_size = 263  # 256 + bos + eos + pad + mask + eng + fra + autocomplete
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-tokenize(
-    model,
-    train_loader,
-    model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v3",
-    output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-18m-compressed_1_20_26",
-    examples_type="train",
-    output_style="short"
-)
+    model = DecoderOnlyTransformer(
+        vocab_size,
+        d_model=1024,
+        nhead=16,
+        num_layers=6,
+        dim_feedforward=512,
+        dropout=0.1,
+        max_len=1024,
+    ).to(device)
+    optimizer = Adam(model.parameters(), lr=1e-4)
+    # print("BEGINNING TRAINING")
+    # train(
+    #     model,
+    #     train_loader,
+    #     optimizer,
+    #     val_loader,
+    #     model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v3",
+    #     training_steps=50000,
+    #     val_interval=500
+    # )
+    print("BEGINNING TOKENIZATION")
+    tokenize(
+        model,
+        val_loader,
+        model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v3",
+        output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-18m-compressed_1_20_26",
+        examples_type="dev",
+        output_style="short",
+    )
+    tokenize(
+        model,
+        test_loader,
+        model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v3",
+        output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-18m-compressed_1_20_26",
+        examples_type="test",
+        output_style="short",
+    )
 
+    tokenize(
+        model,
+        train_loader,
+        model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v3",
+        output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-18m-compressed_1_20_26",
+        examples_type="train",
+        output_style="short",
+    )
 
-# ONE CHAR DUMMY EVAL
-# dummy_dataset = FileBasedLMData(
-#     "examples/one-char-examining/one-char.eng",
-#     max_length=1024,
-# )
-# dummy_loader = DataLoader(
-#     dummy_dataset,
-#     batch_size=2,
-#     num_workers=0,
-#     collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
-# )
-# tokenize(
-#     model,
-#     dummy_loader,
-#     model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v2",
-#     output_dir="/mnt/storage/swexler/thesis-wexler/examples/one-char-examining",
-#     examples_type="dummy",
-#     output_style="short",
-# )
+    # ONE CHAR DUMMY EVAL
+    # dummy_dataset = FileBasedLMData(
+    #     "examples/one-char-examining/one-char.eng",
+    #     max_length=1024,
+    # )
+    # dummy_loader = DataLoader(
+    #     dummy_dataset,
+    #     batch_size=2,
+    #     num_workers=0,
+    #     collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
+    # )
+    # tokenize(
+    #     model,
+    #     dummy_loader,
+    #     model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v2",
+    #     output_dir="/mnt/storage/swexler/thesis-wexler/examples/one-char-examining",
+    #     examples_type="dummy",
+    #     output_style="short",
+    # )
 
-##### EVALUATION
-# model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v2"
-# checkpoint = torch.load(
-#     os.path.join(model_dir, "best_model.pt"), map_location="cpu"
-# )
-# model.load_state_dict(checkpoint["model_state_dict"])
-# print(evaluate(model, val_loader))
+    ##### EVALUATION
+    # model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v2"
+    # checkpoint = torch.load(
+    #     os.path.join(model_dir, "best_model.pt"), map_location="cpu"
+    # )
+    # model.load_state_dict(checkpoint["model_state_dict"])
+    # print(evaluate(model, val_loader))
