@@ -232,7 +232,7 @@ def train(
 @torch.no_grad()
 def compress(model, input_ids, target_ids, output_style=""):
     model.eval()
-
+    
     logits = model(input_ids)  # (B, T, vocab_size)
     preds = logits.argmax(dim=-1)  # (B, T)
     mask = target_ids == -100  # ignore padding positions
@@ -347,36 +347,36 @@ if __name__ == "__main__":
         vocab_size,
         d_model=1024,
         nhead=16,
-        num_layers=6,
+        num_layers=2,
         dim_feedforward=512,
         dropout=0.1,
         max_len=1024,
     ).to(device)
     optimizer = Adam(model.parameters(), lr=1e-4)
-    # print("BEGINNING TRAINING")
-    # train(
-    #     model,
-    #     train_loader,
-    #     optimizer,
-    #     val_loader,
-    #     model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v3",
-    #     training_steps=50000,
-    #     val_interval=500
-    # )
+    print("BEGINNING TRAINING")
+    train(
+        model,
+        train_loader,
+        optimizer,
+        val_loader,
+        model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v4",
+        training_steps=50000,
+        val_interval=500
+    )
     print("BEGINNING TOKENIZATION")
     tokenize(
         model,
         val_loader,
-        model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v3",
-        output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-18m-compressed_1_20_26",
+        model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v4",
+        output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_1_22_26",
         examples_type="dev",
         output_style="short",
     )
     tokenize(
         model,
         test_loader,
-        model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v3",
-        output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-18m-compressed_1_20_26",
+        model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v4",
+        output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_1_22_26",
         examples_type="test",
         output_style="short",
     )
@@ -384,8 +384,8 @@ if __name__ == "__main__":
     tokenize(
         model,
         train_loader,
-        model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v3",
-        output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-18m-compressed_1_20_26",
+        model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v4",
+        output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_1_22_26",
         examples_type="train",
         output_style="short",
     )
