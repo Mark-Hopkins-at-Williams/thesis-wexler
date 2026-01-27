@@ -232,7 +232,7 @@ def train(
 @torch.no_grad()
 def compress(model, input_ids, target_ids, output_style=""):
     model.eval()
-    
+
     logits = model(input_ids)  # (B, T, vocab_size)
     preds = logits.argmax(dim=-1)  # (B, T)
     mask = target_ids == -100  # ignore padding positions
@@ -361,7 +361,7 @@ if __name__ == "__main__":
         val_loader,
         model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v4",
         training_steps=50000,
-        val_interval=500
+        val_interval=500,
     )
     print("BEGINNING TOKENIZATION")
     tokenize(
