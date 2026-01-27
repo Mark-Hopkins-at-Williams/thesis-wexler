@@ -1,5 +1,6 @@
 import re
 from itertools import zip_longest
+from tqdm import tqdm
 
 def copy_first_lines(source_filename, destination_filename, num_lines):
     """
@@ -141,14 +142,31 @@ files = [file_comp_short, file_comp_long, file_orig, french_file_orig]
 #   print("".join(decode_hex_array(get_specific_line(file_comp_long, line))))
 #   print()
 
-written_file = "examples/english-byte-data/train.eng"
-source_file = "examples/french-data-7-mil/organized/train.eng"
+# written_file = "examples/english-byte-data/train.eng"
+# source_file = "examples/french-data-7-mil/organized/train.eng"
 
-file_path = "examples/one-char-examining/compressed-dummy-short.eng"
-for line_num in range(1, count_lines(file_path)+1):
-  print("".join(decode_hex_array(get_specific_line(file_path, line_num))))
+# file_path = "examples/one-char-examining/compressed-dummy-long.eng"
+# for line_num in range(1, count_lines(file_path)+1):
+#   print("".join(decode_hex_array(get_specific_line(file_path, line_num))))
 
 # compare_files(written_file, source_file)
+
+ex_file = "examples/english-data-compressed_1_22_26/compressed-train-short.eng"
+ex_file_organized = "examples/english-data-compressed_1_22_26/organized/compressed-train-short.eng"
+
+count = 0
+with open(ex_file_organized, "r") as file:
+  for line in tqdm(file):
+    count += 1
+print(count)
+
+count = 0
+with open(ex_file, "r") as file:
+  for line in tqdm(file):
+    if len(line) < 512:
+      count += 1
+print(count)
+
 
 # print(get_specific_line(written_file, 6315717))
 # print("".join(decode_hex_array(get_specific_line(written_file, 6315717))))

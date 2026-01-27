@@ -79,7 +79,7 @@ def evaluate_translations(candidate_translations, reference_translations):
 
 
 # evaluation method that is called in finetune.py
-def evaluate_experiment(experiment_dir):
+def evaluate_experiment(experiment_dir, suffix=""):
     logger(f"Initializing model from: {experiment_dir}")
     config_file = Path(experiment_dir) / "experiment.json"
     with open(config_file) as reader:
@@ -107,7 +107,7 @@ def evaluate_experiment(experiment_dir):
     translations = translate_tokenized_mixture_of_bitexts(
         tokenized_test, model, tgt_tokenizer, lang_codes, pmap
     )
-    with open(Path(experiment_dir) / "translations.json", "w") as writer:
+    with open(Path(experiment_dir) / f"translations{suffix}.json", "w") as writer:
         json.dump(translations, writer)
     logger("...translation complete.")
 
@@ -125,7 +125,7 @@ def evaluate_experiment(experiment_dir):
             references[key] = []
         references[key].extend(tgt)
         batch = test_data.next_batch()
-    with open(Path(experiment_dir) / "references.json", "w") as writer:
+    with open(Path(experiment_dir) / f"references{suffix}.json", "w") as writer:
         json.dump(references, writer)
     logger("...references complete.")
 
@@ -134,7 +134,7 @@ def evaluate_experiment(experiment_dir):
     scores = dict()
     for key in translations:
         scores[key] = evaluate_translations(translations[key], references[key])
-    with open(Path(experiment_dir) / "scores.json", "w") as writer:
+    with open(Path(experiment_dir) / f"scores{suffix}.json", "w") as writer:
         json.dump(scores, writer)
     logger("...scoring complete.")
 

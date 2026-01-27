@@ -169,6 +169,15 @@ def finetune(model, train_data, dev_data, model_dir, ft_params):
                 if steps_since_best >= ft_params.patience:
                     logger("Early stopping.")
                     break
+        
+        # evaluating in the middle of training
+        if step == 1000:
+            evaluate_experiment(model_dir, "-1k")
+        
+        if step % 100000 == 0:
+            step_str = "-" + str((step // 1000)) + "k"
+            evaluate_experiment(model_dir, step_str)
+        
 
 
 def main():

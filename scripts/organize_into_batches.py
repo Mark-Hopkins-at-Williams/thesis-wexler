@@ -6,7 +6,7 @@ from tqdm import tqdm
 from transformers import AutoTokenizer
 
 
-def reorganize(batch_size, root_dir, split, output_dir):
+def reorganize(batch_size, root_dir, split, output_dir, max_len):
     """
     Reorganizes text files by sorting lines by token length and shuffling in batches.
 
@@ -25,6 +25,8 @@ def reorganize(batch_size, root_dir, split, output_dir):
         Prefix of the files to process (e.g., "train" for "train.en", "train.fr", etc.).
     output_dir : Path
         Path to the directory where reorganized files will be written. Must not exist prior to call.
+    max_len : str
+        The maximum line of a length that will be kept in the organized dataset.
 
     Raises
     ------
@@ -33,15 +35,21 @@ def reorganize(batch_size, root_dir, split, output_dir):
     """
     
     os.mkdir(output_dir)
-    files = list(root_dir.glob(f"*{split}.*"))
+    #files = list(root_dir.glob(f"*{split}.*"))
+    eng_file = f"compressed-{split}-short.eng"
+    fr_file = f"{split}.fr"
+    files = [eng_file, fr_file]
     model_name = "facebook/nllb-200-distilled-600M"
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     lengths = []
-    with open(root_dir / f"compressed-{split}.eng", encoding="utf-8") as reader:
+    with open(root_dir / f"compressed-{split}-short.eng", encoding="utf-8") as reader:
         for i, line in tqdm(enumerate(reader)):
             line = line.strip()
             tokens = tokenizer(line)["input_ids"]
-            lengths.append((len(tokens), i))
+
+            # Only keep sentences that won't be truncated
+            if len(tokens) < max_len:
+              lengths.append((len(tokens), i))
     line_nums_by_length = [line_num for _, line_num in sorted(lengths)]
     chunk_starts = [
         batch_size * k for k in range((len(line_nums_by_length) // batch_size) - 1)
@@ -51,12 +59,15 @@ def reorganize(batch_size, root_dir, split, output_dir):
     for start in chunk_starts:
         line_nums.extend(line_nums_by_length[start : start + batch_size])
 
-    for file in files:
+    for filename in files:
+        file_path = root_dir / filename
+        output_path = output_dir / filename
         lines = []
-        with open(file, encoding="utf-8") as reader:
+
+        with open(file_path, encoding="utf-8") as reader:
             for line in tqdm(reader):
                 lines.append(line.strip())
-        with open(output_dir / file.name, "w", encoding="utf-8") as writer:
+        with open(output_path, "w", encoding="utf-8") as writer:
             for num in tqdm(line_nums):
                 writer.write(lines[num] + "\n")
 
@@ -66,7 +77,8 @@ if __name__ == "__main__":
     parser.add_argument("--in_dir", type=str, required=True, help="Directory with the original files.")
     parser.add_argument("--out_dir", type=str, required=True, help="Directory for storing the new, reordered files.")
     parser.add_argument("--batch_size", type=int, default=128, help="Desired batch size.")
+    parser.add_argument("--max_len", type=int, default=None, help="Maximum length an example can be to be included in organized file.")
     args = parser.parse_args()
     in_dir = Path(args.in_dir)        
     out_dir = Path(args.out_dir)  
-    reorganize(args.batch_size, in_dir, "train-7m", out_dir)
+    reorganize(args.batch_size, in_dir, "train", out_dir, args.max_len)

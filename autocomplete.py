@@ -17,6 +17,9 @@ CORPORA = {
 }
 
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu") if __name__ == "__main__" else torch.device("cpu")
+
+
 class FileBasedLMData(IterableDataset):
     def __init__(self, filepath, max_length):
         self.filepath = filepath
@@ -132,7 +135,7 @@ def get_total_lines(filepath):
 
 
 @torch.no_grad()
-def evaluate(model, dataloader):
+def evaluate(model, dataloader, device=device):
     model.eval()
     total_loss = 0
     total_tokens = 0
@@ -230,68 +233,72 @@ def train(
 
 
 @torch.no_grad()
-def compress(model, input_ids, target_ids, output_style=""):
+def compress(model, input_ids, target_ids, pred_threshold, device="cpu", output_style=""):
     model.eval()
+
+    input_ids = input_ids.to(device)
+    target_ids = target_ids.to(device)
     
     logits = model(input_ids)  # (B, T, vocab_size)
-    preds = logits.argmax(dim=-1)  # (B, T)
+
+
+    id_for_unknown = -1 # What to return if threshold isn't met for any token
+    temperature = .25 # without this the distribution favors too much the unlikely values
+
+    # Process predictions according to threshold
+    probs = F.softmax(logits / temperature, dim=-1) # converting each logit to %s
+    probs, preds = torch.max(probs, dim=-1) # one matrix for the each char prediction and another matrix for "confidence" of each prediction
+    preds = torch.where(probs >= pred_threshold, preds, torch.tensor(id_for_unknown)) # (B,T)
+    # Compare all of probs to all of threshold. If the prediction is sufficiently confident, the prediction is used for the element. Otherwise, id_for_unknown used
+
+    # preds = logits.argmax(dim=-1)  # (B, T)
     mask = target_ids == -100  # ignore padding positions
 
-    correct = (
+    correct = (   # row is example col is tok
         preds == target_ids
     ) | mask  # our end goal here is to identify all the characters we mispredicted -- padding is kind of neutral so we leave it in {we care about the 0s here}
-    text = []
-    orig = []
+    condensed_batch = []
 
     for i in range(len(correct)):  # each example in batch
         sentinel_active = True
         # If it's a dummy/empty line
         if torch.all(input_ids[i] == 0):
             print("ALL PADDING")
-            text.append("")
-            orig.append("")
+            condensed_batch.append("")
             continue
 
-        orig_line = [
-            chr(input_ids[i][0].item())
-        ]  # original sentence (here just 1st char)
-
-        compressed_line = [
+        condensed_line = [
             input_ids[i][0].item()
         ]  # compressed representation (here just 1st char)
 
         for j in range(len(correct[i])):  # each character in the example
             if (
                 target_ids[i][j] >= 0
-            ):  # filter out padding from condensed rep. (they are now lumped into correct)
-                orig_line.append(
-                    chr(target_ids[i][j].item())
-                )  # add char to the original example
-                # chr(100) gives the character w unicode code point 100
+            ):  # filter out padding from condensed rep. (padding is now lumped into correct)
                 if not correct[i][j]:
-                    compressed_line.append(target_ids[i][j].item())
+                    condensed_line.append(target_ids[i][j].item())
                     sentinel_active = True
                 elif sentinel_active:  # we got it and need to add an emoji
-                    compressed_line.append(128512)
-                    # compressed_line[-1] += 256
+                    condensed_line.append(128512)
+                    # condensed_line[-1] += 256
                     if output_style == "-short":
                         sentinel_active = False  # replaces a whole string of correct predictions with just one emoji, rather than one emoji per character
+       
+        # CONSTRUCTING COMPRESSED REPRESENTATION IN THE CORRECT FORMAT       
         condensed_line_str = ""
-        for item in compressed_line:
+        for item in condensed_line:
             if item != 128512:
                 condensed_line_str += f"\\x{item:02x}"
             else:
                 condensed_line_str = condensed_line_str + chr(128512)
-        text.append(condensed_line_str)
-        orig.append("".join(orig_line))
-    # print(text)
-    # print(orig)
-    return text
+        condensed_batch.append(condensed_line_str)
+    # print(condensed_batch)
+    return condensed_batch
 
 
 # "wrapper method" of sorts for creating condensed representations
 # initalizes model as best model from training then calls compress() repeatedly on batches of examples
-def tokenize(model, loader, model_dir, output_dir, examples_type, output_style=""):
+def tokenize(model, loader, model_dir, output_dir, examples_type, pred_threshold=0.8, output_style=""):
     checkpoint = torch.load(
         os.path.join(model_dir, "best_model.pt"), map_location="cpu"
     )
@@ -312,7 +319,7 @@ def tokenize(model, loader, model_dir, output_dir, examples_type, output_style="
 
     with open(output_path, "w") as writer:
         for input_ids, target_ids in tqdm(loader, total=total_batches):
-            compressed = compress(model, input_ids, target_ids, output_style)
+            compressed = compress(model, input_ids, target_ids, pred_threshold, device, output_style)
             for line in compressed:
                 writer.write(f"{line}\n")
 
@@ -341,7 +348,6 @@ if __name__ == "__main__":
         collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
     )
     vocab_size = 263  # 256 + bos + eos + pad + mask + eng + fra + autocomplete
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = DecoderOnlyTransformer(
         vocab_size,
@@ -353,62 +359,65 @@ if __name__ == "__main__":
         max_len=1024,
     ).to(device)
     optimizer = Adam(model.parameters(), lr=1e-4)
-    print("BEGINNING TRAINING")
-    train(
-        model,
-        train_loader,
-        optimizer,
-        val_loader,
-        model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v4",
-        training_steps=50000,
-        val_interval=500
-    )
-    print("BEGINNING TOKENIZATION")
-    tokenize(
-        model,
-        val_loader,
-        model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v4",
-        output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_1_22_26",
-        examples_type="dev",
-        output_style="short",
-    )
-    tokenize(
-        model,
-        test_loader,
-        model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v4",
-        output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_1_22_26",
-        examples_type="test",
-        output_style="short",
-    )
-
-    tokenize(
-        model,
-        train_loader,
-        model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v4",
-        output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_1_22_26",
-        examples_type="train",
-        output_style="short",
-    )
-
-    # ONE CHAR DUMMY EVAL
-    # dummy_dataset = FileBasedLMData(
-    #     "examples/one-char-examining/one-char.eng",
-    #     max_length=1024,
+    # print("BEGINNING TRAINING")
+    # train(
+    #     model,
+    #     train_loader,
+    #     optimizer,
+    #     val_loader,
+    #     model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v4",
+    #     training_steps=50000,
+    #     val_interval=500
     # )
-    # dummy_loader = DataLoader(
-    #     dummy_dataset,
-    #     batch_size=2,
-    #     num_workers=0,
-    #     collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
+    print("BEGINNING TOKENIZATION")
+    # tokenize(
+    #     model,
+    #     val_loader,
+    #     model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v4",
+    #     output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_1_26_26",
+    #     examples_type="dev",
+    #     pred_threshold=0.8,
+    #     output_style="short",
     # )
     # tokenize(
     #     model,
-    #     dummy_loader,
-    #     model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v2",
-    #     output_dir="/mnt/storage/swexler/thesis-wexler/examples/one-char-examining",
-    #     examples_type="dummy",
+    #     test_loader,
+    #     model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v4",
+    #     output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_1_26_26",
+    #     examples_type="test",
+    #     pred_threshold=0.8,
     #     output_style="short",
     # )
+
+    # tokenize(
+    #     model,
+    #     train_loader,
+    #     model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v4",
+    #     output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_1_26_26",
+    #     examples_type="train",
+    #     pred_threshold=0.8,
+    #     output_style="short",
+    # )
+
+    # ONE CHAR DUMMY
+    dummy_dataset = FileBasedLMData(
+        "examples/one-char-examining/one-char.eng",
+        max_length=1024,
+    )
+    dummy_loader = DataLoader(
+        dummy_dataset,
+        batch_size=2,
+        num_workers=0,
+        collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
+    )
+    tokenize(
+        model,
+        dummy_loader,
+        model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v4",
+        output_dir="/mnt/storage/swexler/thesis-wexler/examples/one-char-examining",
+        examples_type="dummy",
+        output_style="long",
+    )
 
     ##### EVALUATION
     # model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v2"
