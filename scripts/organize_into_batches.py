@@ -4,9 +4,15 @@ from pathlib import Path
 from random import shuffle
 from tqdm import tqdm
 from transformers import AutoTokenizer
+import sys
+import os
 
+# so I can access tokenization.py in the folder above
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-def reorganize(batch_size, root_dir, split, output_dir, max_len):
+from tokenization import *
+
+def reorganize(batch_size, root_dir, split, output_dir, user_tokenizer, max_len):
     """
     Reorganizes text files by sorting lines by token length and shuffling in batches.
 
@@ -25,6 +31,9 @@ def reorganize(batch_size, root_dir, split, output_dir, max_len):
         Prefix of the files to process (e.g., "train" for "train.en", "train.fr", etc.).
     output_dir : Path
         Path to the directory where reorganized files will be written. Must not exist prior to call.
+    user_tokenizer : str
+        The type of tokenizer used to determine length of examples. 
+        "sentinel" for SentinelTokenizer, "char" for CharacterTokenizer, "byte" for ByteTokenizer, "default"/nothing for BPE tokenizer.
     max_len : str
         The maximum line of a length that will be kept in the organized dataset.
 
@@ -34,15 +43,27 @@ def reorganize(batch_size, root_dir, split, output_dir, max_len):
         If `output_dir` already exists.
     """
     
-    os.mkdir(output_dir)
+    # os.mkdir(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
     #files = list(root_dir.glob(f"*{split}.*"))
-    eng_file = f"compressed-{split}-short.eng"
+    #eng_file = f"compressed-{split}-short.eng"
+    eng_file = f"{split}.eng"
     fr_file = f"{split}.fr"
     files = [eng_file, fr_file]
     model_name = "facebook/nllb-200-distilled-600M"
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     lengths = []
-    with open(root_dir / f"compressed-{split}-short.eng", encoding="utf-8") as reader:
+
+    # in case length should be calculated in a more specific manner
+    if user_tokenizer == "sentinel":
+      tokenizer = SentinelTokenizer()
+    if user_tokenizer == "char":
+      tokenizer = CharacterTokenizer()
+    if user_tokenizer == "byte":
+      tokenizer = ByteTokenizer()
+
+    with open(root_dir / eng_file, encoding="utf-8") as reader:
+        print("..Reading Eng..")
         for i, line in tqdm(enumerate(reader)):
             line = line.strip()
             tokens = tokenizer(line)["input_ids"]
@@ -54,6 +75,7 @@ def reorganize(batch_size, root_dir, split, output_dir, max_len):
     chunk_starts = [
         batch_size * k for k in range((len(line_nums_by_length) // batch_size) - 1)
     ]
+    print("..Shuffling..")
     shuffle(chunk_starts)
     line_nums = []
     for start in chunk_starts:
@@ -64,6 +86,7 @@ def reorganize(batch_size, root_dir, split, output_dir, max_len):
         output_path = output_dir / filename
         lines = []
 
+        print("..Final Reading/Writing..")
         with open(file_path, encoding="utf-8") as reader:
             for line in tqdm(reader):
                 lines.append(line.strip())
@@ -77,8 +100,9 @@ if __name__ == "__main__":
     parser.add_argument("--in_dir", type=str, required=True, help="Directory with the original files.")
     parser.add_argument("--out_dir", type=str, required=True, help="Directory for storing the new, reordered files.")
     parser.add_argument("--batch_size", type=int, default=128, help="Desired batch size.")
+    parser.add_argument("--tokenizer", type=str, default="default", help="Which tokenizer should be used when calculating the length of examples.")
     parser.add_argument("--max_len", type=int, default=None, help="Maximum length an example can be to be included in organized file.")
     args = parser.parse_args()
     in_dir = Path(args.in_dir)        
     out_dir = Path(args.out_dir)  
-    reorganize(args.batch_size, in_dir, "train", out_dir, args.max_len)
+    reorganize(args.batch_size, in_dir, "dev", out_dir, args.tokenizer, args.max_len)
