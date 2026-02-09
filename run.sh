@@ -8,4 +8,5 @@
 
 
 python finetune.py --config /mnt/storage/swexler/thesis-wexler/configs/french-training.json
-#python autocomplete.py
+# python scripts/organize_into_batches.py --in_dir examples/french-model_10_28_25/fr-en --out_dir examples/french-data-7-mil-512-filtered --tokenizer byte --max_len 512
+# python autocomplete.py

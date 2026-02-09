@@ -171,12 +171,17 @@ def finetune(model, train_data, dev_data, model_dir, ft_params):
                     break
         
         # evaluating in the middle of training
-        if step == 1000:
-            evaluate_experiment(model_dir, "-1k")
+        # if step == 1000:
+        #     evaluate_experiment(model_dir, "-1k")
+
+        if step == 100000:
+            evaluate_experiment(model_dir, "-100k")
+        if step == 218500:
+            evaluate_experiment(model_dir, "-218.5k")
         
-        if step % 100000 == 0:
-            step_str = "-" + str((step // 1000)) + "k"
-            evaluate_experiment(model_dir, step_str)
+        # if step % 100000 == 0:
+        #     step_str = "-" + str((step // 1000)) + "k"
+        #     evaluate_experiment(model_dir, step_str)
         
 
 

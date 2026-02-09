@@ -11,9 +11,9 @@ import os
 import sys
 
 CORPORA = {
-    "train": "/mnt/storage/swexler/thesis-wexler/examples/french-data-7-mil/organized/train.eng",
-    "dev": "/mnt/storage/swexler/thesis-wexler/examples/french-model_10_28_25/fr-en/dev.eng",
-    "test": "/mnt/storage/swexler/thesis-wexler/examples/french-model_10_28_25/fr-en/test.eng",
+    "train": "/mnt/storage/swexler/thesis-wexler/examples/french-data-7-mil-512-filtered/train.eng",
+    "dev": "/mnt/storage/swexler/thesis-wexler/examples/french-data-7-mil-512-filtered/dev.eng",
+    "test": "/mnt/storage/swexler/thesis-wexler/examples/french-data-7-mil-512-filtered/test.eng"
 }
 
 
@@ -233,7 +233,7 @@ def train(
 
 
 @torch.no_grad()
-def compress(model, input_ids, target_ids, pred_threshold, device="cpu", output_style=""):
+def compress(model, input_ids, target_ids, prediction_threshold, device="cpu", output_style="", prediction_mode="margin"):
     model.eval()
 
     input_ids = input_ids.to(device)
@@ -243,13 +243,10 @@ def compress(model, input_ids, target_ids, pred_threshold, device="cpu", output_
 
 
     id_for_unknown = -1 # What to return if threshold isn't met for any token
-    temperature = .25 # without this the distribution favors too much the unlikely values
+    temperature = 1
 
-    # Process predictions according to threshold
-    probs = F.softmax(logits / temperature, dim=-1) # converting each logit to %s
-    probs, preds = torch.max(probs, dim=-1) # one matrix for the each char prediction and another matrix for "confidence" of each prediction
-    preds = torch.where(probs >= pred_threshold, preds, torch.tensor(id_for_unknown)) # (B,T)
-    # Compare all of probs to all of threshold. If the prediction is sufficiently confident, the prediction is used for the element. Otherwise, id_for_unknown used
+    preds = get_predictions(logits, prediction_threshold, mode=prediction_mode, temperature=1, id_for_unknown=-1) # should have most -1s
+
 
     # preds = logits.argmax(dim=-1)  # (B, T)
     mask = target_ids == -100  # ignore padding positions
@@ -296,9 +293,31 @@ def compress(model, input_ids, target_ids, pred_threshold, device="cpu", output_
     return condensed_batch
 
 
+def get_predictions(logits, prediction_threshold, mode, temperature=1, id_for_unknown=-1):
+  if mode == "top_pred":
+    probs = F.softmax(logits / temperature, dim=-1) # converting each logit to %s
+    probs, preds = torch.max(probs, dim=-1) # one matrix for the each char prediction and another matrix for "confidence" of each prediction
+    preds = torch.where(probs >= prediction_threshold, preds, torch.tensor(id_for_unknown)) # (B,T)
+    # Compare all of probs to all of threshold. If the prediction is sufficiently confident, the prediction is used for the element. Otherwise, id_for_unknown used
+    return preds
+  else:
+    probs = F.softmax(logits / temperature, dim=-1) # converting each logit to %s
+    top_probs, top_preds = torch.topk(probs, k=2, dim=-1) # # one matrix for top 2 char predictions and another matrix for "confidence" of these predictions
+
+    top_guess_confidence = top_probs[:, :, 0] # all probs of top guess
+    second_guess_confidence = top_probs[:, :, 1] # all probs of second guess
+    top_guess = top_preds[:, :, 0] # the actual top guesses
+
+    margin = top_guess_confidence - second_guess_confidence # gap between 1st and 2nd guesses
+    preds = torch.where(margin >= prediction_threshold, top_guess, torch.tensor(id_for_unknown)) 
+    # If the prediction is sufficiently confident, the prediction is used for the element. Otherwise, id_for_unknown used
+    return preds
+    
+
+
 # "wrapper method" of sorts for creating condensed representations
 # initalizes model as best model from training then calls compress() repeatedly on batches of examples
-def tokenize(model, loader, model_dir, output_dir, examples_type, pred_threshold=0.8, output_style=""):
+def tokenize(model, loader, model_dir, output_dir, examples_type, prediction_threshold=0.8, output_style="", prediction_mode="margin"):
     checkpoint = torch.load(
         os.path.join(model_dir, "best_model.pt"), map_location="cpu"
     )
@@ -319,9 +338,11 @@ def tokenize(model, loader, model_dir, output_dir, examples_type, pred_threshold
 
     with open(output_path, "w") as writer:
         for input_ids, target_ids in tqdm(loader, total=total_batches):
-            compressed = compress(model, input_ids, target_ids, pred_threshold, device, output_style)
+            compressed = compress(model, input_ids, target_ids, prediction_threshold, device, output_style, prediction_mode)
             for line in compressed:
                 writer.write(f"{line}\n")
+
+
 
 
 if __name__ == "__main__":
@@ -360,64 +381,82 @@ if __name__ == "__main__":
     ).to(device)
     optimizer = Adam(model.parameters(), lr=1e-4)
     # print("BEGINNING TRAINING")
+    # separate_dataset = FileBasedLMData("/mnt/storage/yuri/thesis-yuri/corpus/training-monolingual/news.2007.en.shuffled", max_length=1024)
+    # separate_dataset_loader = DataLoader(
+    #     separate_dataset,
+    #     batch_size=64,
+    #     num_workers=0,
+    #     collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
+    # )
     # train(
     #     model,
-    #     train_loader,
+    #     separate_dataset_loader,
     #     optimizer,
     #     val_loader,
-    #     model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v4",
+    #     model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v5",
     #     training_steps=50000,
     #     val_interval=500
     # )
+
+
     print("BEGINNING TOKENIZATION")
-    # tokenize(
-    #     model,
-    #     val_loader,
-    #     model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v4",
-    #     output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_1_26_26",
-    #     examples_type="dev",
-    #     pred_threshold=0.8,
-    #     output_style="short",
-    # )
-    # tokenize(
-    #     model,
-    #     test_loader,
-    #     model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v4",
-    #     output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_1_26_26",
-    #     examples_type="test",
-    #     pred_threshold=0.8,
-    #     output_style="short",
-    # )
-
-    # tokenize(
-    #     model,
-    #     train_loader,
-    #     model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v4",
-    #     output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_1_26_26",
-    #     examples_type="train",
-    #     pred_threshold=0.8,
-    #     output_style="short",
-    # )
-
-    # ONE CHAR DUMMY
-    dummy_dataset = FileBasedLMData(
-        "examples/one-char-examining/one-char.eng",
-        max_length=1024,
-    )
-    dummy_loader = DataLoader(
-        dummy_dataset,
-        batch_size=2,
-        num_workers=0,
-        collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
+    tokenize(
+        model,
+        val_loader,
+        model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v5",
+        output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_2_8_26-0.7",
+        examples_type="dev",
+        prediction_threshold=0.7,
+        prediction_mode="margin",
+        output_style="short"
     )
     tokenize(
         model,
-        dummy_loader,
-        model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v4",
-        output_dir="/mnt/storage/swexler/thesis-wexler/examples/one-char-examining",
-        examples_type="dummy",
-        output_style="long",
+        test_loader,
+        model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v5",
+        output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_2_8_26-0.7",
+        examples_type="test",
+        prediction_threshold=0.7,
+        prediction_mode="margin",
+        output_style="short"
     )
+
+    tokenize(
+        model,
+        train_loader,
+        model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v5",
+        output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_2_8_26-0.7",
+        examples_type="train",
+        prediction_threshold=0.7,
+        prediction_mode="margin",
+        output_style="short"
+    )
+
+
+
+
+
+    # ONE CHAR DUMMY
+    # dummy_dataset = FileBasedLMData(
+    #     "examples/one-char-examining/one-char.eng",
+    #     max_length=1024,
+    # )
+    # dummy_loader = DataLoader(
+    #     dummy_dataset,
+    #     batch_size=3,
+    #     num_workers=0,
+    #     collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
+    # )
+    # tokenize(
+    #     model,
+    #     dummy_loader,
+    #     model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v4",
+    #     output_dir="/mnt/storage/swexler/thesis-wexler/examples/one-char-examining",
+    #     examples_type="dummy",
+    #     prediction_threshold=0.15,
+    #     output_style="long",
+    #     prediction_mode="margin"
+    # )
 
     ##### EVALUATION
     # model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v2"
