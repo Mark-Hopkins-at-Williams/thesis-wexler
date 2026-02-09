@@ -3,6 +3,7 @@ import unittest
 from torch import tensor
 import torch
 import re
+from autocomplete import get_predictions
 
 
 class MockAutocompleteModel:
@@ -51,7 +52,9 @@ class TestAutocomplete(unittest.TestCase):
         # )
         target_strings = [f[1:] for f in full_strings]
         target_ids = strings_to_ids(target_strings, letter_to_id)
-        text = compress(model, input_ids, target_ids, pred_threshold=0.8, output_style="-long")
+        text = compress(
+            model, input_ids, target_ids, pred_threshold=0.8, output_style="-long"
+        )
         # print(f"Full                    = {full_strings}")
         # print(f"Condensed rep (decoded) = {self.decode_hex_list(text)}")
         received = self.decode_hex_list(text)
@@ -97,7 +100,9 @@ class TestAutocomplete(unittest.TestCase):
 
         target_strings = [f[1:] for f in full_strings]
         target_ids = strings_to_ids(target_strings, letter_to_id)
-        text = compress(model, input_ids, target_ids, pred_threshold=0.8, output_style="-short")
+        text = compress(
+            model, input_ids, target_ids, pred_threshold=0.8, output_style="-short"
+        )
         # print(f"Condensed rep = {text}")
         # print(f"Full                    = {full_strings}")
 
@@ -143,76 +148,71 @@ class TestAutocomplete(unittest.TestCase):
 
         target_strings = [f[1:] for f in full_strings]
         target_ids = strings_to_ids(target_strings, letter_to_id)
-        text = compress(model, input_ids, target_ids, pred_threshold=0.8, output_style="-long")
+        text = compress(
+            model, input_ids, target_ids, pred_threshold=0.8, output_style="-long"
+        )
 
         print(f"Condensed rep (decoded) = {self.decode_hex_list(text)}")
 
         received = self.decode_hex_list(text)
-        expected = [
-          "a😀😀😀😀b", 
-          "accccc", 
-          "ccccc😀", 
-          "ccccc😀"
-        ]
+        expected = ["a😀😀😀😀b", "accccc", "ccccc😀", "ccccc😀"]
         self.assertEqual(received, expected)
 
     def test_threshold_high(self):
-      alphabet = "_abc"
-      letter_to_id = {letter: i for (i, letter) in enumerate(alphabet)}
-      full_strings = [
-          "abcabc",
-          "cabcab",
-      ]
-      input_strings = [f[:-1] for f in full_strings]
-      input_ids = strings_to_ids(input_strings, letter_to_id)
-      model = MockAutocompleteModel(alphabet)
+        alphabet = "_abc"
+        letter_to_id = {letter: i for (i, letter) in enumerate(alphabet)}
+        full_strings = [
+            "abcabc",
+            "cabcab",
+        ]
+        input_strings = [f[:-1] for f in full_strings]
+        input_ids = strings_to_ids(input_strings, letter_to_id)
+        model = MockAutocompleteModel(alphabet)
 
-      print(f"Inputs                  = {input_strings}")
-      print(
-          f"Preds                   = {self.logits_to_strings(model(input_ids), alphabet)}"
-      )
+        print(f"Inputs                  = {input_strings}")
+        print(
+            f"Preds                   = {self.logits_to_strings(model(input_ids), alphabet)}"
+        )
 
-      target_strings = [f[1:] for f in full_strings]
-      target_ids = strings_to_ids(target_strings, letter_to_id)
-      text = compress(model, input_ids, target_ids, pred_threshold=0.999, output_style="-short")
-      print(f"Full                    = {full_strings}")
+        target_strings = [f[1:] for f in full_strings]
+        target_ids = strings_to_ids(target_strings, letter_to_id)
+        text = compress(
+            model, input_ids, target_ids, pred_threshold=0.999, output_style="-short"
+        )
+        print(f"Full                    = {full_strings}")
 
-      print(f"Condensed rep (decoded) = {self.decode_hex_list(text)}") 
-      received = self.decode_hex_list(text)
-      expected = [
-        "abcabc", 
-        "cabcab"
-      ]
-      self.assertEqual(received, expected)
+        print(f"Condensed rep (decoded) = {self.decode_hex_list(text)}")
+        received = self.decode_hex_list(text)
+        expected = ["abcabc", "cabcab"]
+        self.assertEqual(received, expected)
 
     def test_threshold_low(self):
-      alphabet = "_abc"
-      letter_to_id = {letter: i for (i, letter) in enumerate(alphabet)}
-      full_strings = [
-          "abcabc",
-          "cabcab",
-      ]
-      input_strings = [f[:-1] for f in full_strings]
-      input_ids = strings_to_ids(input_strings, letter_to_id)
-      model = MockAutocompleteModel(alphabet)
+        alphabet = "_abc"
+        letter_to_id = {letter: i for (i, letter) in enumerate(alphabet)}
+        full_strings = [
+            "abcabc",
+            "cabcab",
+        ]
+        input_strings = [f[:-1] for f in full_strings]
+        input_ids = strings_to_ids(input_strings, letter_to_id)
+        model = MockAutocompleteModel(alphabet)
 
-      print(f"Inputs                  = {input_strings}")
-      print(
-          f"Preds                   = {self.logits_to_strings(model(input_ids), alphabet)}"
-      )
+        print(f"Inputs                  = {input_strings}")
+        print(
+            f"Preds                   = {self.logits_to_strings(model(input_ids), alphabet)}"
+        )
 
-      target_strings = [f[1:] for f in full_strings]
-      target_ids = strings_to_ids(target_strings, letter_to_id)
-      text = compress(model, input_ids, target_ids, pred_threshold=0.8, output_style="-short")
-      print(f"Full                    = {full_strings}")
+        target_strings = [f[1:] for f in full_strings]
+        target_ids = strings_to_ids(target_strings, letter_to_id)
+        text = compress(
+            model, input_ids, target_ids, pred_threshold=0.8, output_style="-short"
+        )
+        print(f"Full                    = {full_strings}")
 
-      print(f"Condensed rep (decoded) = {self.decode_hex_list(text)}") 
-      received = self.decode_hex_list(text)
-      expected = [
-        "a😀", 
-        "c😀"
-      ]
-      self.assertEqual(received, expected)
+        print(f"Condensed rep (decoded) = {self.decode_hex_list(text)}")
+        received = self.decode_hex_list(text)
+        expected = ["a😀", "c😀"]
+        self.assertEqual(received, expected)
 
     def decode_hex_list(self, input_list):
         decoded_result = []
@@ -243,6 +243,53 @@ class TestAutocomplete(unittest.TestCase):
             decoded_strings.append(text)
 
         return decoded_strings
+
+
+class TestPredictions(unittest.TestCase):
+
+    def test_get_predictions_top_pred(self):
+        logits = tensor([[[1.2, 1.5, 0.3], [-0.4, 0.6, 1.0]]])
+        preds = get_predictions(logits, prediction_threshold=0.5, mode="top_pred")
+        expected = tensor([[-1, 2]])
+        self.assertTrue(torch.equal(preds, expected))
+
+    def test_get_predictions_top_pred2(self):
+        logits = tensor([[[1.2, 1.5, 0.3], [-0.4, 0.6, 1.0]]])
+        preds = get_predictions(logits, prediction_threshold=0.4, mode="top_pred")
+        expected = tensor([[1, 2]])
+        self.assertTrue(torch.equal(preds, expected))
+
+    def test_get_predictions_top_pred3(self):
+        logits = tensor([[[1.2, 1.5, 0.3], [-0.4, 0.6, 1.0]]])
+        preds = get_predictions(logits, prediction_threshold=0.6, mode="top_pred")
+        expected = tensor([[-1, -1]])
+        self.assertTrue(torch.equal(preds, expected))
+
+    def test_get_predictions_margin(self):
+        logits = tensor([[[1.2, 1.5, 0.3], [-0.4, 0.6, 1.0]]])
+        preds = get_predictions(logits, prediction_threshold=0.15, mode="margin")
+        expected = tensor([[-1, 2]])
+        self.assertTrue(torch.equal(preds, expected))
+
+    def test_get_predictions_margin2(self):
+        logits = tensor([[[1.2, 1.5, 0.3], [-0.4, 0.6, 1.0]]])
+        preds = get_predictions(logits, prediction_threshold=0.1, mode="margin")
+        expected = tensor([[1, 2]])
+        self.assertTrue(torch.equal(preds, expected))
+
+    def test_get_predictions_margin3(self):
+        logits = tensor([[[1.2, 1.5, 0.3], [-0.4, 0.6, 1.0]]])
+        preds = get_predictions(logits, prediction_threshold=0.9, mode="margin")
+        expected = tensor([[-1, -1]])
+        self.assertTrue(torch.equal(preds, expected))
+
+    def test_get_predictions_top_pred_batch(self):
+        logits = tensor(
+            [[[1.2, 1.5, 0.3], [-0.4, 0.6, 1.0]], [[0.8, -0.5, -0.3], [0.4, 0.8, 0.4]]]
+        )
+        preds = get_predictions(logits, prediction_threshold=0.5, mode="top_pred")
+        expected = tensor([[-1, 2], [0, -1]])
+        self.assertTrue(torch.equal(preds, expected))
 
 
 if __name__ == "__main__":
