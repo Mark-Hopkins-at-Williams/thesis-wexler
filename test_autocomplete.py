@@ -53,7 +53,7 @@ class TestAutocomplete(unittest.TestCase):
         target_strings = [f[1:] for f in full_strings]
         target_ids = strings_to_ids(target_strings, letter_to_id)
         text = compress(
-            model, input_ids, target_ids, pred_threshold=0.8, output_style="-long"
+            model, input_ids, target_ids, prediction_threshold=0.3, output_style="-long", prediction_mode="top_pred"
         )
         # print(f"Full                    = {full_strings}")
         # print(f"Condensed rep (decoded) = {self.decode_hex_list(text)}")
@@ -101,7 +101,7 @@ class TestAutocomplete(unittest.TestCase):
         target_strings = [f[1:] for f in full_strings]
         target_ids = strings_to_ids(target_strings, letter_to_id)
         text = compress(
-            model, input_ids, target_ids, pred_threshold=0.8, output_style="-short"
+            model, input_ids, target_ids, prediction_threshold=0.45, output_style="-short", prediction_mode="top_pred"
         )
         # print(f"Condensed rep = {text}")
         # print(f"Full                    = {full_strings}")
@@ -149,7 +149,7 @@ class TestAutocomplete(unittest.TestCase):
         target_strings = [f[1:] for f in full_strings]
         target_ids = strings_to_ids(target_strings, letter_to_id)
         text = compress(
-            model, input_ids, target_ids, pred_threshold=0.8, output_style="-long"
+            model, input_ids, target_ids, prediction_threshold=0.45, output_style="-long", prediction_mode="top_pred"
         )
 
         print(f"Condensed rep (decoded) = {self.decode_hex_list(text)}")
@@ -177,7 +177,7 @@ class TestAutocomplete(unittest.TestCase):
         target_strings = [f[1:] for f in full_strings]
         target_ids = strings_to_ids(target_strings, letter_to_id)
         text = compress(
-            model, input_ids, target_ids, pred_threshold=0.999, output_style="-short"
+            model, input_ids, target_ids, prediction_threshold=0.999, output_style="-short", prediction_mode="top_pred"
         )
         print(f"Full                    = {full_strings}")
 
@@ -205,7 +205,7 @@ class TestAutocomplete(unittest.TestCase):
         target_strings = [f[1:] for f in full_strings]
         target_ids = strings_to_ids(target_strings, letter_to_id)
         text = compress(
-            model, input_ids, target_ids, pred_threshold=0.8, output_style="-short"
+            model, input_ids, target_ids, prediction_threshold=0.2, output_style="-short", prediction_mode="top_pred"
         )
         print(f"Full                    = {full_strings}")
 

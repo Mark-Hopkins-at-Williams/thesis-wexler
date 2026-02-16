@@ -8,6 +8,7 @@ import math
 import torch.nn.functional as F
 from torch.optim import Adam
 import os
+import json
 import sys
 
 CORPORA = {
@@ -245,7 +246,7 @@ def compress(model, input_ids, target_ids, prediction_threshold, device="cpu", o
     id_for_unknown = -1 # What to return if threshold isn't met for any token
     temperature = 1
 
-    preds = get_predictions(logits, prediction_threshold, mode=prediction_mode, temperature=1, id_for_unknown=-1) # should have most -1s
+    preds = get_predictions(logits, prediction_threshold, mode=prediction_mode, temperature=1, id_for_unknown=-1) 
 
 
     # preds = logits.argmax(dim=-1)  # (B, T)
@@ -399,37 +400,53 @@ if __name__ == "__main__":
     # )
 
 
+    specifications = {
+      "source_data": os.path.dirname(CORPORA["train"]),
+      "compression_model": "/mnt/storage/swexler/thesis-wexler/models/autocomplete-v5",
+      "prediction_threshold": 0.7,
+      "prediction_mode": "margin",
+      "output_style": "short"
+    }
+    desired_output_dir = "/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_2_8_26-0.7"
+
+    ## Making json with how we compressed the files
+    os.makedirs(desired_output_dir, exist_ok=True)
+    documentation_path = os.path.join(desired_output_dir, "specs.json")
+    with open(documentation_path, "w") as f:
+        json.dump(data, f, indent=4)
+
+
     print("BEGINNING TOKENIZATION")
     tokenize(
         model,
         val_loader,
-        model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v5",
-        output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_2_8_26-0.7",
+        model_dir=specifications["compression_model"],
+        output_dir=desired_output_dir,
         examples_type="dev",
-        prediction_threshold=0.7,
-        prediction_mode="margin",
-        output_style="short"
+        prediction_threshold=specifications["prediction_threshold"],
+        prediction_mode=specifications["prediction_mode"],
+        output_style=specifications["output_style"]
     )
     tokenize(
         model,
         test_loader,
-        model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v5",
-        output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_2_8_26-0.7",
+        model_dir=specifications["compression_model"],
+        output_dir=desired_output_dir,
         examples_type="test",
-        prediction_threshold=0.7,
-        prediction_mode="margin",
-        output_style="short"
+        prediction_threshold=specifications["prediction_threshold"],
+        prediction_mode=specifications["prediction_mode"],
+        output_style=specifications["output_style"]
     )
 
     tokenize(
         model,
         train_loader,
-        model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v5",
-        output_dir="/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_2_8_26-0.7",
+        model_dir=specifications["compression_model"],
+        output_dir=desired_output_dir,
         examples_type="train",
-        prediction_threshold=0.7,
-        prediction_mode="margin",
-        output_style="short"
+        prediction_threshold=specifications["prediction_threshold"],
+        prediction_mode=specifications["prediction_mode"],
+        output_style=specifications["output_style"]
     )
 
 
