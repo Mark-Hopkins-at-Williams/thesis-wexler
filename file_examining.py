@@ -4,7 +4,7 @@ from tqdm import tqdm
 
 def copy_first_lines(source_filename, destination_filename, num_lines):
     """
-    Reads the first 10 lines of a source file and writes them to a 
+    Reads the first num_lines lines of a source file and writes them to a 
     destination file.
     """
     try:
@@ -26,6 +26,22 @@ def copy_first_lines(source_filename, destination_filename, num_lines):
         print(f"An error occurred: {e}")
 
 
+def remove_vowels_from_file(input_filename, output_filename):
+    vowels = "aeiouAEIOU"
+    translation_table = str.maketrans('', '', vowels) # first 2 params are what to swap (nothing), 3rd param is what to remove
+
+    try:
+        with open(input_filename, 'r', encoding='utf-8') as infile:
+            with open(output_filename, 'w', encoding='utf-8') as outfile:
+                for line in tqdm(infile):
+                    outfile.write(line.translate(translation_table))
+        
+    except FileNotFoundError:
+        print(f"Error: The file '{input_filename}' was not found.")
+    except PermissionError:
+        print(f"Error: Permission denied when accessing the files.")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
 
 
 def get_specific_line(filename, line_number):
@@ -132,18 +148,30 @@ files = [file_comp_short, file_comp_long, file_orig, french_file_orig]
 # print(count_lines(file_orig))
 # print(count_lines(french_file_orig))
 
-# for line in range(5500000, 5500001):
+fr_file = "examples/french-data-7-mil-512-filtered/train.fr"
+eng_file = "examples/french-data-7-mil-512-filtered/train.eng"
+
+# for line in range(5500000, 5500011):
 #   print(f"-------LINE {line}-------")
-#   print(get_specific_line(french_file_orig, line))
-#   print(get_specific_line(file_orig, line))
+#   print(get_specific_line(fr_file, line))
+#   print(get_specific_line(eng_file, line))
 #   print("====SHORT CONDENSED====")
 #   print("".join(decode_hex_array(get_specific_line(file_comp_short, line))))
 #   print("====LONG CONDENSED====")
 #   print("".join(decode_hex_array(get_specific_line(file_comp_long, line))))
 #   print()
 
-# written_file = "examples/english-byte-data/train.eng"
-# source_file = "examples/french-data-7-mil/organized/train.eng"
+# longest_len = 0
+# with open(eng_file, "r") as file:
+#   for line in tqdm(file):
+#     line_len = len([byte for byte in line.encode()])
+#     if line_len > longest_len:
+#       longest_len = line_len
+# print(longest_len)
+
+  
+
+
 
 # file_path = "examples/one-char-examining/compressed-dummy-long.eng"
 # for line_num in range(1, count_lines(file_path)+1):
@@ -151,23 +179,55 @@ files = [file_comp_short, file_comp_long, file_orig, french_file_orig]
 
 # compare_files(written_file, source_file)
 
-ex_file = "examples/english-data-compressed_1_22_26/compressed-train-short.eng"
-ex_file_organized = "examples/english-data-compressed_1_22_26/organized/compressed-train-short.eng"
+# ex_file = "examples/english-data-compressed_1_22_26/compressed-train-short.eng"
+# ex_file_organized = "examples/english-data-compressed_1_22_26/organized/compressed-train-short.eng"
 
-count = 0
-with open(ex_file_organized, "r") as file:
-  for line in tqdm(file):
-    count += 1
-print(count)
+# count = 0
+# with open(ex_file_organized, "r") as file:
+#   for line in tqdm(file):
+#     count += 1
+# print(count)
 
-count = 0
-with open(ex_file, "r") as file:
-  for line in tqdm(file):
-    if len(line) < 512:
-      count += 1
-print(count)
+# count = 0
+# with open(ex_file, "r") as file:
+#   for line in tqdm(file):
+#     if len(line) < 512:
+#       count += 1
+# print(count)
 
 
-# print(get_specific_line(written_file, 6315717))
+# source_file = "examples/french-data-7-mil-512-filtered/dev.eng"
+# written_file = "examples/english-data-compressed_1_28_26-0.5/compressed-dev-short.eng"
+# old_line = get_specific_line(source_file, 31)
+# new_line = "".join(decode_hex_array(get_specific_line(written_file, 31)))
+# new_line_str = get_specific_line(written_file, 31)
+# new_line_arr = decode_hex_array(get_specific_line(written_file, 31))
+
+# reading_file = "examples/english-data-compressed_2_23_26-0.2-margin/compressed-dev-short.eng"
+# lens = []
+# with open(reading_file, "r") as file:
+#   for line in tqdm(file):
+#     lens.append(len("".join(decode_hex_array(line.strip()))))
+# print(lens)
+# print(sum(lens) / len(lens))
+
+for line in range(1, 12):
+  print(f"-------LINE {line}-------")
+  print(get_specific_line("examples/one-char-examining/one-char.eng", line).strip())
+  print("====LONG VERSION====")
+  print("".join(decode_hex_array(get_specific_line("examples/one-char-examining/compressed-dummy-long.eng", line))))
+  print("====AUTOCOMPLETED====")
+  print("".join(decode_hex_array(get_specific_line("examples/one-char-examining/compressed-dummy-short.eng", line))))
+  print()
+
+
+# with open("examples/one-char-examining/compressed-dummy-short.eng", "r") as file:
+#   for line in tqdm(file):
+#     print("".join(decode_hex_array(line.strip())))
+
 # print("".join(decode_hex_array(get_specific_line(written_file, 6315717))))
-# print("".join(decode_hex_array(get_specific_line(source_file, 6315717))))
+
+# infile = "examples/french-data-7-mil-512-filtered/train.eng"
+# outfile = "examples/no-vowels_french-data-7-mil-512-filtered/train.eng"
+
+# remove_vowels_from_file(infile, outfile)

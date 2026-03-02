@@ -234,7 +234,7 @@ def train(
 
 
 @torch.no_grad()
-def compress(model, input_ids, target_ids, prediction_threshold, device="cpu", output_style="", prediction_mode="margin"):
+def compress(model, input_ids, target_ids, prediction_threshold, device="cpu", output_style="", prediction_mode="margin", autocomplete_mode="default"):
     model.eval()
 
     input_ids = input_ids.to(device)
@@ -248,6 +248,53 @@ def compress(model, input_ids, target_ids, prediction_threshold, device="cpu", o
 
     preds = get_predictions(logits, prediction_threshold, mode=prediction_mode, temperature=1, id_for_unknown=-1) 
 
+    # for autocomplete approach with 2 kinds of letters
+    stylized_letters = {
+      "a": "ą", "A": "Ą",
+      "b": "ḃ", "B": "Ḃ",
+      "c": "č", "C": "Č",
+      "d": "ď", "D": "Ď",
+      "e": "ė", "E": "Ė",
+      "f": "ƒ", "F": "Ƒ",
+      "g": "ğ", "G": "Ğ",
+      "h": "ȟ", "H": "Ȟ",
+      "i": "į", "I": "Į",
+      "j": "ǰ", "J": "ǰ",  # no distinct uppercase form
+      "k": "ķ", "K": "Ķ",
+      "l": "ľ", "L": "Ľ",
+      "m": "ṁ", "M": "Ṁ",
+      "n": "ň", "N": "Ň",
+      "o": "ő", "O": "Ő",
+      "p": "ṗ", "P": "Ṗ",
+      "q": "ɋ", "Q": "Ɋ",
+      "r": "ř", "R": "Ř",
+      "s": "ș", "S": "Ș",
+      "t": "ť", "T": "Ť",
+      "u": "ů", "U": "Ů",
+      "v": "ṽ", "V": "Ṽ",
+      "w": "ẇ", "W": "Ẇ",
+      "x": "ẋ", "X": "Ẋ",
+      "y": "ẏ", "Y": "Ẏ",
+      "z": "ž", "Z": "Ž",
+      "0": "⓪",
+      "1": "①", 
+      "2": "②",
+      "3": "③",
+      "4": "④",
+      "5": "⑤",
+      "6": "⑥",
+      "7": "⑦",
+      "8": "⑧",
+      "9": "⑨",
+      ".": "․",   # one dot leader
+      ",": "‚",   # low comma
+      "!": "ǃ",   # retroflex click
+      "?": "¿",   # inverted question mark
+      ":": "꞉",   # modifier letter colon
+      ";": ";",   # Greek question mark
+      "'": "ʹ",   # prime
+      " ": "∙"
+    }
 
     # preds = logits.argmax(dim=-1)  # (B, T)
     mask = target_ids == -100  # ignore padding positions
@@ -269,26 +316,69 @@ def compress(model, input_ids, target_ids, prediction_threshold, device="cpu", o
             input_ids[i][0].item()
         ]  # compressed representation (here just 1st char)
 
-        for j in range(len(correct[i])):  # each character in the example
-            if (
-                target_ids[i][j] >= 0
-            ):  # filter out padding from condensed rep. (padding is now lumped into correct)
-                if not correct[i][j]:
-                    condensed_line.append(target_ids[i][j].item())
-                    sentinel_active = True
-                elif sentinel_active:  # we got it and need to add an emoji
-                    condensed_line.append(128512)
-                    # condensed_line[-1] += 256
-                    if output_style == "-short":
-                        sentinel_active = False  # replaces a whole string of correct predictions with just one emoji, rather than one emoji per character
+
+        if autocomplete_mode == "store_num_chars_autocompleted":
+          num_correct = 0
+          for j in range(len(correct[i])):  # each character in the example
+              if (
+                  target_ids[i][j] >= 0
+              ):  # filter out padding from condensed rep. (padding is now lumped into correct)
+                  if not correct[i][j]:
+                      condensed_line.append(target_ids[i][j].item())
+                      sentinel_active = True
+                      num_correct = 0
+                  else: # correct prediction
+                    num_correct += 1
+
+                    # checking if this is the last correct token in the run or last token in general
+                    is_last = (j == len(correct[i]) - 1 or not correct[i][j + 1])
+
+                    if sentinel_active and is_last:  # we only add emojis at the end of a run
+                      condensed_line.append(128512+num_correct)
+                      if output_style == "-short":
+                          sentinel_active = False  # replaces a whole string of correct predictions with just one emoji, rather than one emoji per character
+                      num_correct = 0
+        if autocomplete_mode == "no_autocomplete_chars":
+          for j in range(len(correct[i])):  # each character in the example
+              if (
+                  target_ids[i][j] >= 0
+              ):  # filter out padding from condensed rep. (padding is now lumped into correct)
+                  if not correct[i][j]:
+                      condensed_line.append(target_ids[i][j].item())
+        if autocomplete_mode == "two_types_english_chars":
+          for j in range(len(correct[i])):  # each character in the example
+              if (
+                  target_ids[i][j] >= 0
+              ):  # filter out padding from condensed rep. (padding is now lumped into correct)
+                  if not correct[i][j]:
+                      if not correct[i][j-1] and j > 0: # how to handle first char?
+                        print("triggered swap")
+                        if chr(condensed_line[-1]) in [key for key in stylized_letters]:
+                          replacement_char = stylized_letters[chr(condensed_line[-1])]
+                          condensed_line[-1] = ord(replacement_char)
+                        else: 
+                          condensed_line[-1] = ord("⋰")
+                      condensed_line.append(target_ids[i][j].item())
+        if autocomplete_mode == "default": # default approach
+          for j in range(len(correct[i])):  # each character in the example
+              if (
+                  target_ids[i][j] >= 0
+              ):  # filter out padding from condensed rep. (padding is now lumped into correct)
+                  if not correct[i][j]:
+                      condensed_line.append(target_ids[i][j].item())
+                      sentinel_active = True
+                  elif sentinel_active:  # we got it and need to add an emoji
+                      condensed_line.append(128512)
+                      if output_style == "-short":
+                          sentinel_active = False  # replaces a whole string of correct predictions with just one emoji, rather than one emoji per character
        
         # CONSTRUCTING COMPRESSED REPRESENTATION IN THE CORRECT FORMAT       
         condensed_line_str = ""
         for item in condensed_line:
-            if item != 128512:
-                condensed_line_str += f"\\x{item:02x}"
+            if item > 0 and item < 256:
+              condensed_line_str += f"\\x{item:02x}" # format hex string correctly
             else:
-                condensed_line_str = condensed_line_str + chr(128512)
+                condensed_line_str = condensed_line_str + chr(item)
         condensed_batch.append(condensed_line_str)
     # print(condensed_batch)
     return condensed_batch
@@ -318,7 +408,7 @@ def get_predictions(logits, prediction_threshold, mode, temperature=1, id_for_un
 
 # "wrapper method" of sorts for creating condensed representations
 # initalizes model as best model from training then calls compress() repeatedly on batches of examples
-def tokenize(model, loader, model_dir, output_dir, examples_type, prediction_threshold=0.8, output_style="", prediction_mode="margin"):
+def tokenize(model, loader, model_dir, output_dir, examples_type, prediction_threshold=0.8, output_style="", prediction_mode="margin", autocomplete_mode="default"):
     checkpoint = torch.load(
         os.path.join(model_dir, "best_model.pt"), map_location="cpu"
     )
@@ -339,7 +429,7 @@ def tokenize(model, loader, model_dir, output_dir, examples_type, prediction_thr
 
     with open(output_path, "w") as writer:
         for input_ids, target_ids in tqdm(loader, total=total_batches):
-            compressed = compress(model, input_ids, target_ids, prediction_threshold, device, output_style, prediction_mode)
+            compressed = compress(model, input_ids, target_ids, prediction_threshold, device, output_style, prediction_mode, autocomplete_mode)
             for line in compressed:
                 writer.write(f"{line}\n")
 
@@ -348,27 +438,28 @@ def tokenize(model, loader, model_dir, output_dir, examples_type, prediction_thr
 
 if __name__ == "__main__":
     # dataset = StreamingDatasetLMData('allenai/c4', 'en', 'train', max_length=1024)
-    train_dataset = FileBasedLMData(CORPORA["train"], max_length=1024)
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=64,
-        num_workers=0,
-        collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
-    )
-    val_dataset = FileBasedLMData(CORPORA["dev"], max_length=1024)
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=2,
-        num_workers=0,
-        collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
-    )
-    test_dataset = FileBasedLMData(CORPORA["test"], max_length=1024)
-    test_loader = DataLoader(
-        test_dataset,
-        batch_size=2,
-        num_workers=0,
-        collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
-    )
+
+    # train_dataset = FileBasedLMData(CORPORA["train"], max_length=1024)
+    # train_loader = DataLoader(
+    #     train_dataset,
+    #     batch_size=64,
+    #     num_workers=0,
+    #     collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
+    # )
+    # val_dataset = FileBasedLMData(CORPORA["dev"], max_length=1024)
+    # val_loader = DataLoader(
+    #     val_dataset,
+    #     batch_size=2,
+    #     num_workers=0,
+    #     collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
+    # )
+    # test_dataset = FileBasedLMData(CORPORA["test"], max_length=1024)
+    # test_loader = DataLoader(
+    #     test_dataset,
+    #     batch_size=2,
+    #     num_workers=0,
+    #     collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
+    # )
     vocab_size = 263  # 256 + bos + eos + pad + mask + eng + fra + autocomplete
 
     model = DecoderOnlyTransformer(
@@ -400,80 +491,91 @@ if __name__ == "__main__":
     # )
 
 
-    specifications = {
-      "source_data": os.path.dirname(CORPORA["train"]),
-      "compression_model": "/mnt/storage/swexler/thesis-wexler/models/autocomplete-v5",
-      "prediction_threshold": 0.7,
-      "prediction_mode": "margin",
-      "output_style": "short"
-    }
-    desired_output_dir = "/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_2_8_26-0.7"
+    # specifications = {
+    #   "source_data": os.path.dirname(CORPORA["train"]),
+    #   "compression_model": "/mnt/storage/swexler/thesis-wexler/models/autocomplete-v5",
+    #   "prediction_threshold": 0.2, # float within (0,1)
+    #   "prediction_mode": "margin", # margin or top_pred (absolute)
+    #   "output_style": "short", # short or long
+    #   "date_compressed": "2_23_26"
+    #   "autocomplete_mode": ""
+    # }
+    # desired_output_dir = (
+    #   "/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_" 
+    #   + specifications["date_compressed"] + "-" 
+    #   + str(specifications["prediction_threshold"]) + "-" 
+    #   + specifications["prediction_mode"] + specifications["autocomplete_mode"]
+    # ) 
 
-    ## Making json with how we compressed the files
-    os.makedirs(desired_output_dir, exist_ok=True)
-    documentation_path = os.path.join(desired_output_dir, "specs.json")
-    with open(documentation_path, "w") as f:
-        json.dump(data, f, indent=4)
+    # ## Making json with how we compressed the files
+    # os.makedirs(desired_output_dir, exist_ok=True)
+    # documentation_path = os.path.join(desired_output_dir, "specs.json")
+    # with open(documentation_path, "w") as f:
+    #     json.dump(specifications, f, indent=4)
 
 
-    print("BEGINNING TOKENIZATION")
-    tokenize(
-        model,
-        val_loader,
-        model_dir=specifications["compression_model"],
-        output_dir=desired_output_dir,
-        examples_type="dev",
-        prediction_threshold=specifications["prediction_threshold"],
-        prediction_mode=specifications["prediction_mode"],
-        output_style=specifications["output_style"]
-    )
-    tokenize(
-        model,
-        test_loader,
-        model_dir=specifications["compression_model"],
-        output_dir=desired_output_dir,
-        examples_type="test",
-        prediction_threshold=specifications["prediction_threshold"],
-        prediction_mode=specifications["prediction_mode"],
-        output_style=specifications["output_style"]
-    )
+    # print("BEGINNING TOKENIZATION")
+    # tokenize(
+    #     model,
+    #     val_loader,
+    #     model_dir=specifications["compression_model"],
+    #     output_dir=desired_output_dir,
+    #     examples_type="dev",
+    #     prediction_threshold=specifications["prediction_threshold"],
+    #     prediction_mode=specifications["prediction_mode"],
+    #     output_style=specifications["output_style"]
+    #     autocomplete_mode=specifications["autocomplete_mode"]
+    # )
+    # tokenize(
+    #     model,
+    #     test_loader,
+    #     model_dir=specifications["compression_model"],
+    #     output_dir=desired_output_dir,
+    #     examples_type="test",
+    #     prediction_threshold=specifications["prediction_threshold"],
+    #     prediction_mode=specifications["prediction_mode"],
+    #     output_style=specifications["output_style"]
+    #     autocomplete_mode=specifications["autocomplete_mode"]
+    # )
 
-    tokenize(
-        model,
-        train_loader,
-        model_dir=specifications["compression_model"],
-        output_dir=desired_output_dir,
-        examples_type="train",
-        prediction_threshold=specifications["prediction_threshold"],
-        prediction_mode=specifications["prediction_mode"],
-        output_style=specifications["output_style"]
-    )
+    # tokenize(
+    #     model,
+    #     train_loader,
+    #     model_dir=specifications["compression_model"],
+    #     output_dir=desired_output_dir,
+    #     examples_type="train",
+    #     prediction_threshold=specifications["prediction_threshold"],
+    #     prediction_mode=specifications["prediction_mode"],
+    #     output_style=specifications["output_style"]
+    #     autocomplete_mode=specifications["autocomplete_mode"]
+    # )
 
 
 
 
 
     # ONE CHAR DUMMY
-    # dummy_dataset = FileBasedLMData(
-    #     "examples/one-char-examining/one-char.eng",
-    #     max_length=1024,
-    # )
-    # dummy_loader = DataLoader(
-    #     dummy_dataset,
-    #     batch_size=3,
-    #     num_workers=0,
-    #     collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
-    # )
-    # tokenize(
-    #     model,
-    #     dummy_loader,
-    #     model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v4",
-    #     output_dir="/mnt/storage/swexler/thesis-wexler/examples/one-char-examining",
-    #     examples_type="dummy",
-    #     prediction_threshold=0.15,
-    #     output_style="long",
-    #     prediction_mode="margin"
-    # )
+    dummy_dataset = FileBasedLMData(
+        "examples/one-char-examining/one-char.eng",
+        max_length=1024,
+    )
+    dummy_loader = DataLoader(
+        dummy_dataset,
+        batch_size=3,
+        num_workers=0,
+        collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
+    )
+    tokenize(
+        model,
+        dummy_loader,
+        model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v5",
+        output_dir="/mnt/storage/swexler/thesis-wexler/examples/one-char-examining",
+        examples_type="dummy",
+        prediction_threshold=0.7,
+        output_style="short",
+        prediction_mode="margin",
+        autocomplete_mode="store_num_chars_autocompleted"
+    )
 
     ##### EVALUATION
     # model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v2"
