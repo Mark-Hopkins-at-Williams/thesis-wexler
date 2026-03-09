@@ -211,7 +211,10 @@ eng_file = "examples/french-data-7-mil-512-filtered/train.eng"
 # print(lens)
 # print(sum(lens) / len(lens))
 
-for line in range(1, 12):
+with open("examples/one-char-examining/one-char.eng", 'r') as file:
+    line_count = sum(1 for line in file)
+
+for line in range(1, line_count+1):
   print(f"-------LINE {line}-------")
   print(get_specific_line("examples/one-char-examining/one-char.eng", line).strip())
   print("====LONG VERSION====")

@@ -10,6 +10,7 @@ from torch.optim import Adam
 import os
 import json
 import sys
+from collections import defaultdict
 
 CORPORA = {
     "train": "/mnt/storage/swexler/thesis-wexler/examples/french-data-7-mil-512-filtered/train.eng",
@@ -242,6 +243,7 @@ def compress(model, input_ids, target_ids, prediction_threshold, device="cpu", o
     
     logits = model(input_ids)  # (B, T, vocab_size)
 
+    run_length_dict = defaultdict(int)
 
     id_for_unknown = -1 # What to return if threshold isn't met for any token
     temperature = 1
@@ -319,25 +321,30 @@ def compress(model, input_ids, target_ids, prediction_threshold, device="cpu", o
 
         if autocomplete_mode == "store_num_chars_autocompleted":
           num_correct = 0
+          is_last = False
           for j in range(len(correct[i])):  # each character in the example
               if (
                   target_ids[i][j] >= 0
               ):  # filter out padding from condensed rep. (padding is now lumped into correct)
                   if not correct[i][j]:
                       condensed_line.append(target_ids[i][j].item())
-                      sentinel_active = True
                       num_correct = 0
                   else: # correct prediction
-                    num_correct += 1
+                    num_correct += 1 
+                    if j == len(correct[i]) - 1: # we are at the end of the longest example in batch
+                      is_last = True
+                    else:
+                      next_is_padding = target_ids[i][j + 1] < 0
+                      next_is_incorrect = not correct[i][j + 1]
+                      if next_is_padding or next_is_incorrect:
+                        is_last = True
 
-                    # checking if this is the last correct token in the run or last token in general
-                    is_last = (j == len(correct[i]) - 1 or not correct[i][j + 1])
-
-                    if sentinel_active and is_last:  # we only add emojis at the end of a run
+                    if is_last:  # we only add emojis at the end of a run
                       condensed_line.append(128512+num_correct)
-                      if output_style == "-short":
-                          sentinel_active = False  # replaces a whole string of correct predictions with just one emoji, rather than one emoji per character
+                      run_length_dict[num_correct] += 1
                       num_correct = 0
+                      is_last = False
+                
         if autocomplete_mode == "no_autocomplete_chars":
           for j in range(len(correct[i])):  # each character in the example
               if (
@@ -351,13 +358,10 @@ def compress(model, input_ids, target_ids, prediction_threshold, device="cpu", o
                   target_ids[i][j] >= 0
               ):  # filter out padding from condensed rep. (padding is now lumped into correct)
                   if not correct[i][j]:
-                      if not correct[i][j-1] and j > 0: # how to handle first char?
-                        print("triggered swap")
+                      if not correct[i][j-1] and j > 0: 
                         if chr(condensed_line[-1]) in [key for key in stylized_letters]:
                           replacement_char = stylized_letters[chr(condensed_line[-1])]
                           condensed_line[-1] = ord(replacement_char)
-                        else: 
-                          condensed_line[-1] = ord("⋰")
                       condensed_line.append(target_ids[i][j].item())
         if autocomplete_mode == "default": # default approach
           for j in range(len(correct[i])):  # each character in the example
@@ -381,7 +385,7 @@ def compress(model, input_ids, target_ids, prediction_threshold, device="cpu", o
                 condensed_line_str = condensed_line_str + chr(item)
         condensed_batch.append(condensed_line_str)
     # print(condensed_batch)
-    return condensed_batch
+    return condensed_batch, dict(run_length_dict)
 
 
 def get_predictions(logits, prediction_threshold, mode, temperature=1, id_for_unknown=-1):
@@ -417,6 +421,8 @@ def tokenize(model, loader, model_dir, output_dir, examples_type, prediction_thr
     model.to(device)
     print("BEGINNING COMPRESSION")
 
+    global_run_length_dict = defaultdict(int)
+
     total_lines = get_total_lines(loader.dataset.filepath)
     total_batches = math.ceil(total_lines / loader.batch_size)
 
@@ -429,37 +435,49 @@ def tokenize(model, loader, model_dir, output_dir, examples_type, prediction_thr
 
     with open(output_path, "w") as writer:
         for input_ids, target_ids in tqdm(loader, total=total_batches):
-            compressed = compress(model, input_ids, target_ids, prediction_threshold, device, output_style, prediction_mode, autocomplete_mode)
+            
+            compressed, batch_run_lengths = compress(model, input_ids, target_ids, prediction_threshold, device, output_style, prediction_mode, autocomplete_mode)
             for line in compressed:
                 writer.write(f"{line}\n")
+            for k, v in batch_run_lengths.items():
+              global_run_length_dict[k] += v
 
+    # add up run lengths from all batches
+    # print(global_run_length_dict)
+
+    # print("Run length distribution:")
+    sum = 0
+    for key in sorted(global_run_length_dict):
+      sum = sum + (key * global_run_length_dict[key])
+      print(f"{key}: {global_run_length_dict[key]}")
+    print(sum)
 
 
 
 if __name__ == "__main__":
     # dataset = StreamingDatasetLMData('allenai/c4', 'en', 'train', max_length=1024)
 
-    # train_dataset = FileBasedLMData(CORPORA["train"], max_length=1024)
-    # train_loader = DataLoader(
-    #     train_dataset,
-    #     batch_size=64,
-    #     num_workers=0,
-    #     collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
-    # )
-    # val_dataset = FileBasedLMData(CORPORA["dev"], max_length=1024)
-    # val_loader = DataLoader(
-    #     val_dataset,
-    #     batch_size=2,
-    #     num_workers=0,
-    #     collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
-    # )
-    # test_dataset = FileBasedLMData(CORPORA["test"], max_length=1024)
-    # test_loader = DataLoader(
-    #     test_dataset,
-    #     batch_size=2,
-    #     num_workers=0,
-    #     collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
-    # )
+    train_dataset = FileBasedLMData(CORPORA["train"], max_length=1024)
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=64,
+        num_workers=0,
+        collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
+    )
+    val_dataset = FileBasedLMData(CORPORA["dev"], max_length=1024)
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=2,
+        num_workers=0,
+        collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
+    )
+    test_dataset = FileBasedLMData(CORPORA["test"], max_length=1024)
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=2,
+        num_workers=0,
+        collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
+    )
     vocab_size = 263  # 256 + bos + eos + pad + mask + eng + fra + autocomplete
 
     model = DecoderOnlyTransformer(
@@ -490,53 +508,59 @@ if __name__ == "__main__":
     #     val_interval=500
     # )
 
+    """ 
+    autocomplete modes = store_num_chars_autocompleted
+                         no_autocomplete_chars
+                         two_types_english_chars
+                         default
+    """
 
-    # specifications = {
-    #   "source_data": os.path.dirname(CORPORA["train"]),
-    #   "compression_model": "/mnt/storage/swexler/thesis-wexler/models/autocomplete-v5",
-    #   "prediction_threshold": 0.2, # float within (0,1)
-    #   "prediction_mode": "margin", # margin or top_pred (absolute)
-    #   "output_style": "short", # short or long
-    #   "date_compressed": "2_23_26"
-    #   "autocomplete_mode": ""
-    # }
-    # desired_output_dir = (
-    #   "/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_" 
-    #   + specifications["date_compressed"] + "-" 
-    #   + str(specifications["prediction_threshold"]) + "-" 
-    #   + specifications["prediction_mode"] + specifications["autocomplete_mode"]
-    # ) 
+    specifications = {
+      "source_data": os.path.dirname(CORPORA["train"]),
+      "compression_model": "/mnt/storage/swexler/thesis-wexler/models/autocomplete-v5",
+      "prediction_threshold": 0.5, # float within (0,1)
+      "prediction_mode": "margin", # margin or top_pred (absolute)
+      "output_style": "short", # short or long
+      "date_compressed": "3_4_26",
+      "autocomplete_mode": "store_num_chars_autocompleted" 
+    }
+    desired_output_dir = (
+      "/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_" 
+      + specifications["date_compressed"] + "-" 
+      + str(specifications["prediction_threshold"]) + "-" 
+      + specifications["prediction_mode"] + specifications["autocomplete_mode"]
+    ) 
 
-    # ## Making json with how we compressed the files
-    # os.makedirs(desired_output_dir, exist_ok=True)
-    # documentation_path = os.path.join(desired_output_dir, "specs.json")
-    # with open(documentation_path, "w") as f:
-    #     json.dump(specifications, f, indent=4)
+    ## Making json with how we compressed the files
+    os.makedirs(desired_output_dir, exist_ok=True)
+    documentation_path = os.path.join(desired_output_dir, "specs.json")
+    with open(documentation_path, "w") as f:
+        json.dump(specifications, f, indent=4)
 
 
-    # print("BEGINNING TOKENIZATION")
-    # tokenize(
-    #     model,
-    #     val_loader,
-    #     model_dir=specifications["compression_model"],
-    #     output_dir=desired_output_dir,
-    #     examples_type="dev",
-    #     prediction_threshold=specifications["prediction_threshold"],
-    #     prediction_mode=specifications["prediction_mode"],
-    #     output_style=specifications["output_style"]
-    #     autocomplete_mode=specifications["autocomplete_mode"]
-    # )
-    # tokenize(
-    #     model,
-    #     test_loader,
-    #     model_dir=specifications["compression_model"],
-    #     output_dir=desired_output_dir,
-    #     examples_type="test",
-    #     prediction_threshold=specifications["prediction_threshold"],
-    #     prediction_mode=specifications["prediction_mode"],
-    #     output_style=specifications["output_style"]
-    #     autocomplete_mode=specifications["autocomplete_mode"]
-    # )
+    print("BEGINNING TOKENIZATION")
+    tokenize(
+        model,
+        val_loader,
+        model_dir=specifications["compression_model"],
+        output_dir=desired_output_dir,
+        examples_type="dev",
+        prediction_threshold=specifications["prediction_threshold"],
+        prediction_mode=specifications["prediction_mode"],
+        output_style=specifications["output_style"],
+        autocomplete_mode=specifications["autocomplete_mode"]
+    )
+    tokenize(
+        model,
+        test_loader,
+        model_dir=specifications["compression_model"],
+        output_dir=desired_output_dir,
+        examples_type="test",
+        prediction_threshold=specifications["prediction_threshold"],
+        prediction_mode=specifications["prediction_mode"],
+        output_style=specifications["output_style"],
+        autocomplete_mode=specifications["autocomplete_mode"]
+    )
 
     # tokenize(
     #     model,
@@ -546,7 +570,7 @@ if __name__ == "__main__":
     #     examples_type="train",
     #     prediction_threshold=specifications["prediction_threshold"],
     #     prediction_mode=specifications["prediction_mode"],
-    #     output_style=specifications["output_style"]
+    #     output_style=specifications["output_style"],
     #     autocomplete_mode=specifications["autocomplete_mode"]
     # )
 
@@ -555,27 +579,34 @@ if __name__ == "__main__":
 
 
     # ONE CHAR DUMMY
-    dummy_dataset = FileBasedLMData(
-        "examples/one-char-examining/one-char.eng",
-        max_length=1024,
-    )
-    dummy_loader = DataLoader(
-        dummy_dataset,
-        batch_size=3,
-        num_workers=0,
-        collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
-    )
-    tokenize(
-        model,
-        dummy_loader,
-        model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v5",
-        output_dir="/mnt/storage/swexler/thesis-wexler/examples/one-char-examining",
-        examples_type="dummy",
-        prediction_threshold=0.7,
-        output_style="short",
-        prediction_mode="margin",
-        autocomplete_mode="store_num_chars_autocompleted"
-    )
+    # dummy_dataset = FileBasedLMData(
+    #     "examples/one-char-examining/one-char.eng",
+    #     max_length=1024,
+    # )
+    # dummy_loader = DataLoader(
+    #     dummy_dataset,
+    #     batch_size=3,
+    #     num_workers=0,
+    #     collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
+    # )
+    # tokenize(
+    #     model,
+    #     dummy_loader,
+    #     model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v5",
+    #     output_dir="/mnt/storage/swexler/thesis-wexler/examples/one-char-examining",
+    #     examples_type="dummy",
+    #     prediction_threshold=0.5,
+    #     output_style="short",
+    #     prediction_mode="margin",
+    #     autocomplete_mode="store_num_chars_autocompleted"
+    # )
+
+    """ 
+    modes = store_num_chars_autocompleted
+            no_autocomplete_chars
+            two_types_english_chars
+            default
+    """
 
     ##### EVALUATION
     # model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v2"
