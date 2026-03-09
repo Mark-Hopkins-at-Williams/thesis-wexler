@@ -53,7 +53,12 @@ class TestAutocomplete(unittest.TestCase):
         target_strings = [f[1:] for f in full_strings]
         target_ids = strings_to_ids(target_strings, letter_to_id)
         text = compress(
-            model, input_ids, target_ids, prediction_threshold=0.3, output_style="-long", prediction_mode="top_pred"
+            model,
+            input_ids,
+            target_ids,
+            prediction_threshold=0.3,
+            output_style="-long",
+            prediction_mode="top_pred",
         )
         # print(f"Full                    = {full_strings}")
         # print(f"Condensed rep (decoded) = {self.decode_hex_list(text)}")
@@ -101,7 +106,12 @@ class TestAutocomplete(unittest.TestCase):
         target_strings = [f[1:] for f in full_strings]
         target_ids = strings_to_ids(target_strings, letter_to_id)
         text = compress(
-            model, input_ids, target_ids, prediction_threshold=0.45, output_style="-short", prediction_mode="top_pred"
+            model,
+            input_ids,
+            target_ids,
+            prediction_threshold=0.45,
+            output_style="-short",
+            prediction_mode="top_pred",
         )
         # print(f"Condensed rep = {text}")
         # print(f"Full                    = {full_strings}")
@@ -149,7 +159,12 @@ class TestAutocomplete(unittest.TestCase):
         target_strings = [f[1:] for f in full_strings]
         target_ids = strings_to_ids(target_strings, letter_to_id)
         text = compress(
-            model, input_ids, target_ids, prediction_threshold=0.45, output_style="-long", prediction_mode="top_pred"
+            model,
+            input_ids,
+            target_ids,
+            prediction_threshold=0.45,
+            output_style="-long",
+            prediction_mode="top_pred",
         )
 
         print(f"Condensed rep (decoded) = {self.decode_hex_list(text)}")
@@ -177,7 +192,12 @@ class TestAutocomplete(unittest.TestCase):
         target_strings = [f[1:] for f in full_strings]
         target_ids = strings_to_ids(target_strings, letter_to_id)
         text = compress(
-            model, input_ids, target_ids, prediction_threshold=0.999, output_style="-short", prediction_mode="top_pred"
+            model,
+            input_ids,
+            target_ids,
+            prediction_threshold=0.999,
+            output_style="-short",
+            prediction_mode="top_pred",
         )
         print(f"Full                    = {full_strings}")
 
@@ -205,7 +225,12 @@ class TestAutocomplete(unittest.TestCase):
         target_strings = [f[1:] for f in full_strings]
         target_ids = strings_to_ids(target_strings, letter_to_id)
         text = compress(
-            model, input_ids, target_ids, prediction_threshold=0.2, output_style="-short", prediction_mode="top_pred"
+            model,
+            input_ids,
+            target_ids,
+            prediction_threshold=0.2,
+            output_style="-short",
+            prediction_mode="top_pred",
         )
         print(f"Full                    = {full_strings}")
 
@@ -243,6 +268,129 @@ class TestAutocomplete(unittest.TestCase):
             decoded_strings.append(text)
 
         return decoded_strings
+
+    def test_compress_store_num_chars_autocompleted(self):
+        alphabet = "_abc"
+        letter_to_id = {letter: i for (i, letter) in enumerate(alphabet)}
+        full_strings = [
+            "abcabc",
+            "bcabca",
+            "abcabc",
+            "abcbbc",
+            "abcabb",
+            "accccc",
+            "ccccca",
+            "ccccca",
+        ]
+        input_strings = [f[:-1] for f in full_strings]
+        input_ids = strings_to_ids(input_strings, letter_to_id)
+        model = MockAutocompleteModel(alphabet)
+        target_strings = [f[1:] for f in full_strings]
+        target_ids = strings_to_ids(target_strings, letter_to_id)
+        text = compress(
+            model,
+            input_ids,
+            target_ids,
+            prediction_threshold=0.3,
+            prediction_mode="top_pred",
+            autocomplete_mode="store_num_chars_autocompleted",
+        )
+        received = self.decode_hex_list(text)
+        ac = [chr(ord("😀") + k) for k in range(10)]
+        expected = [
+            "a" + ac[5],
+            "b" + ac[5],
+            "a" + ac[5],
+            "a" + ac[2] + "bb" + ac[1],
+            "a" + ac[4] + "b",
+            "accccc",
+            "ccccc" + ac[1],
+            "ccccc" + ac[1],
+        ]
+        self.assertEqual(received, expected)
+
+    def test_compress_no_autocomplete_chars(self):
+        alphabet = "_abc"
+        letter_to_id = {letter: i for (i, letter) in enumerate(alphabet)}
+        full_strings = [
+            "abcabc",
+            "bcabca",
+            "abcabc",
+            "abcbbc",
+            "abcabb",
+            "accccc",
+            "ccccca",
+            "ccccca",
+        ]
+        input_strings = [f[:-1] for f in full_strings]
+        input_ids = strings_to_ids(input_strings, letter_to_id)
+        model = MockAutocompleteModel(alphabet)
+        target_strings = [f[1:] for f in full_strings]
+        target_ids = strings_to_ids(target_strings, letter_to_id)
+        text = compress(
+            model,
+            input_ids,
+            target_ids,
+            prediction_threshold=0.3,
+            prediction_mode="top_pred",
+            autocomplete_mode="no_autocomplete_chars",
+        )
+        received = self.decode_hex_list(text)
+        expected = [
+            "a",
+            "b",
+            "a",
+            "abb",
+            "ab",
+            "accccc",
+            "ccccc",
+            "ccccc",
+        ]
+        self.assertEqual(received, expected)
+
+    def test_compress_two_types_english_chars(self):
+        from autocomplete import STYLIZED_LETTERS
+
+        alphabet = "_abc"
+        letter_to_id = {letter: i for (i, letter) in enumerate(alphabet)}
+        full_strings = [
+            "abcabc",
+            "bcabca",
+            "abcabc",
+            "abcbbc",
+            "abcabb",
+            "accccc",
+            "ccccca",
+            "ccccca",
+        ]
+        stylized_letters = {chr(1): "ą", chr(2): "ḃ", chr(3): "č"}
+        input_strings = [f[:-1] for f in full_strings]
+        input_ids = strings_to_ids(input_strings, letter_to_id)
+        model = MockAutocompleteModel(alphabet)
+        target_strings = [f[1:] for f in full_strings]
+        target_ids = strings_to_ids(target_strings, letter_to_id)
+        text = compress(
+            model,
+            input_ids,
+            target_ids,
+            prediction_threshold=0.3,
+            prediction_mode="top_pred",
+            autocomplete_mode="two_types_english_chars",
+            stylized_letters=stylized_letters,
+        )
+        received = self.decode_hex_list(text)
+
+        expected = [
+            "a",
+            "b",
+            "a",
+            f"a{stylized_letters[chr(2)]}b",
+            "ab",
+            "a" + (stylized_letters[chr(3)] * 4) + "c",
+            "c" + (stylized_letters[chr(3)] * 3) + "c",
+            "c" + (stylized_letters[chr(3)] * 3) + "c",
+        ]
+        self.assertEqual(received, expected)
 
 
 class TestPredictions(unittest.TestCase):

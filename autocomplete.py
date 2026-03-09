@@ -15,11 +15,89 @@ from collections import defaultdict
 CORPORA = {
     "train": "/mnt/storage/swexler/thesis-wexler/examples/french-data-7-mil-512-filtered/train.eng",
     "dev": "/mnt/storage/swexler/thesis-wexler/examples/french-data-7-mil-512-filtered/dev.eng",
-    "test": "/mnt/storage/swexler/thesis-wexler/examples/french-data-7-mil-512-filtered/test.eng"
+    "test": "/mnt/storage/swexler/thesis-wexler/examples/french-data-7-mil-512-filtered/test.eng",
 }
 
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu") if __name__ == "__main__" else torch.device("cpu")
+# for autocomplete approach with 2 kinds of letters
+STYLIZED_LETTERS = {
+    "a": "ą",
+    "A": "Ą",
+    "b": "ḃ",
+    "B": "Ḃ",
+    "c": "č",
+    "C": "Č",
+    "d": "ď",
+    "D": "Ď",
+    "e": "ė",
+    "E": "Ė",
+    "f": "ƒ",
+    "F": "Ƒ",
+    "g": "ğ",
+    "G": "Ğ",
+    "h": "ȟ",
+    "H": "Ȟ",
+    "i": "į",
+    "I": "Į",
+    "j": "ǰ",
+    "J": "ǰ",  # no distinct uppercase form
+    "k": "ķ",
+    "K": "Ķ",
+    "l": "ľ",
+    "L": "Ľ",
+    "m": "ṁ",
+    "M": "Ṁ",
+    "n": "ň",
+    "N": "Ň",
+    "o": "ő",
+    "O": "Ő",
+    "p": "ṗ",
+    "P": "Ṗ",
+    "q": "ɋ",
+    "Q": "Ɋ",
+    "r": "ř",
+    "R": "Ř",
+    "s": "ș",
+    "S": "Ș",
+    "t": "ť",
+    "T": "Ť",
+    "u": "ů",
+    "U": "Ů",
+    "v": "ṽ",
+    "V": "Ṽ",
+    "w": "ẇ",
+    "W": "Ẇ",
+    "x": "ẋ",
+    "X": "Ẋ",
+    "y": "ẏ",
+    "Y": "Ẏ",
+    "z": "ž",
+    "Z": "Ž",
+    "0": "⓪",
+    "1": "①",
+    "2": "②",
+    "3": "③",
+    "4": "④",
+    "5": "⑤",
+    "6": "⑥",
+    "7": "⑦",
+    "8": "⑧",
+    "9": "⑨",
+    ".": "․",  # one dot leader
+    ",": "‚",  # low comma
+    "!": "ǃ",  # retroflex click
+    "?": "¿",  # inverted question mark
+    ":": "꞉",  # modifier letter colon
+    ";": ";",  # Greek question mark
+    "'": "ʹ",  # prime
+    " ": "∙",
+}
+
+device = (
+    torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if __name__ == "__main__"
+    else torch.device("cpu")
+)
 
 
 class FileBasedLMData(IterableDataset):
@@ -235,73 +313,41 @@ def train(
 
 
 @torch.no_grad()
-def compress(model, input_ids, target_ids, prediction_threshold, device="cpu", output_style="", prediction_mode="margin", autocomplete_mode="default"):
+def compress(
+    model,
+    input_ids,
+    target_ids,
+    prediction_threshold,
+    device="cpu",
+    output_style="",
+    prediction_mode="margin",
+    autocomplete_mode="default",
+    stylized_letters=STYLIZED_LETTERS,
+):
     model.eval()
 
     input_ids = input_ids.to(device)
     target_ids = target_ids.to(device)
-    
+
     logits = model(input_ids)  # (B, T, vocab_size)
 
     run_length_dict = defaultdict(int)
 
-    id_for_unknown = -1 # What to return if threshold isn't met for any token
+    id_for_unknown = -1  # What to return if threshold isn't met for any token
     temperature = 1
 
-    preds = get_predictions(logits, prediction_threshold, mode=prediction_mode, temperature=1, id_for_unknown=-1) 
-
-    # for autocomplete approach with 2 kinds of letters
-    stylized_letters = {
-      "a": "ą", "A": "Ą",
-      "b": "ḃ", "B": "Ḃ",
-      "c": "č", "C": "Č",
-      "d": "ď", "D": "Ď",
-      "e": "ė", "E": "Ė",
-      "f": "ƒ", "F": "Ƒ",
-      "g": "ğ", "G": "Ğ",
-      "h": "ȟ", "H": "Ȟ",
-      "i": "į", "I": "Į",
-      "j": "ǰ", "J": "ǰ",  # no distinct uppercase form
-      "k": "ķ", "K": "Ķ",
-      "l": "ľ", "L": "Ľ",
-      "m": "ṁ", "M": "Ṁ",
-      "n": "ň", "N": "Ň",
-      "o": "ő", "O": "Ő",
-      "p": "ṗ", "P": "Ṗ",
-      "q": "ɋ", "Q": "Ɋ",
-      "r": "ř", "R": "Ř",
-      "s": "ș", "S": "Ș",
-      "t": "ť", "T": "Ť",
-      "u": "ů", "U": "Ů",
-      "v": "ṽ", "V": "Ṽ",
-      "w": "ẇ", "W": "Ẇ",
-      "x": "ẋ", "X": "Ẋ",
-      "y": "ẏ", "Y": "Ẏ",
-      "z": "ž", "Z": "Ž",
-      "0": "⓪",
-      "1": "①", 
-      "2": "②",
-      "3": "③",
-      "4": "④",
-      "5": "⑤",
-      "6": "⑥",
-      "7": "⑦",
-      "8": "⑧",
-      "9": "⑨",
-      ".": "․",   # one dot leader
-      ",": "‚",   # low comma
-      "!": "ǃ",   # retroflex click
-      "?": "¿",   # inverted question mark
-      ":": "꞉",   # modifier letter colon
-      ";": ";",   # Greek question mark
-      "'": "ʹ",   # prime
-      " ": "∙"
-    }
+    preds = get_predictions(
+        logits,
+        prediction_threshold,
+        mode=prediction_mode,
+        temperature=1,
+        id_for_unknown=-1,
+    )
 
     # preds = logits.argmax(dim=-1)  # (B, T)
     mask = target_ids == -100  # ignore padding positions
 
-    correct = (   # row is example col is tok
+    correct = (  # row is example col is tok
         preds == target_ids
     ) | mask  # our end goal here is to identify all the characters we mispredicted -- padding is kind of neutral so we leave it in {we care about the 0s here}
     condensed_batch = []
@@ -318,101 +364,125 @@ def compress(model, input_ids, target_ids, prediction_threshold, device="cpu", o
             input_ids[i][0].item()
         ]  # compressed representation (here just 1st char)
 
-
         if autocomplete_mode == "store_num_chars_autocompleted":
-          num_correct = 0
-          is_last = False
-          for j in range(len(correct[i])):  # each character in the example
-              if (
-                  target_ids[i][j] >= 0
-              ):  # filter out padding from condensed rep. (padding is now lumped into correct)
-                  if not correct[i][j]:
-                      condensed_line.append(target_ids[i][j].item())
-                      num_correct = 0
-                  else: # correct prediction
-                    num_correct += 1 
-                    if j == len(correct[i]) - 1: # we are at the end of the longest example in batch
-                      is_last = True
-                    else:
-                      next_is_padding = target_ids[i][j + 1] < 0
-                      next_is_incorrect = not correct[i][j + 1]
-                      if next_is_padding or next_is_incorrect:
-                        is_last = True
+            num_correct = 0
+            is_last = False
+            for j in range(len(correct[i])):  # each character in the example
+                if (
+                    target_ids[i][j] >= 0
+                ):  # filter out padding from condensed rep. (padding is now lumped into correct)
+                    if not correct[i][j]:
+                        condensed_line.append(target_ids[i][j].item())
+                        num_correct = 0
+                    else:  # correct prediction
+                        num_correct += 1
+                        if (
+                            j == len(correct[i]) - 1
+                        ):  # we are at the end of the longest example in batch
+                            is_last = True
+                        else:
+                            next_is_padding = target_ids[i][j + 1] < 0
+                            next_is_incorrect = not correct[i][j + 1]
+                            if next_is_padding or next_is_incorrect:
+                                is_last = True
 
-                    if is_last:  # we only add emojis at the end of a run
-                      condensed_line.append(128512+num_correct)
-                      run_length_dict[num_correct] += 1
-                      num_correct = 0
-                      is_last = False
-                
+                        if is_last:  # we only add emojis at the end of a run
+                            condensed_line.append(128512 + num_correct)
+                            run_length_dict[num_correct] += 1
+                            num_correct = 0
+                            is_last = False
+
         if autocomplete_mode == "no_autocomplete_chars":
-          for j in range(len(correct[i])):  # each character in the example
-              if (
-                  target_ids[i][j] >= 0
-              ):  # filter out padding from condensed rep. (padding is now lumped into correct)
-                  if not correct[i][j]:
-                      condensed_line.append(target_ids[i][j].item())
+            for j in range(len(correct[i])):  # each character in the example
+                if (
+                    target_ids[i][j] >= 0
+                ):  # filter out padding from condensed rep. (padding is now lumped into correct)
+                    if not correct[i][j]:
+                        condensed_line.append(target_ids[i][j].item())
         if autocomplete_mode == "two_types_english_chars":
-          for j in range(len(correct[i])):  # each character in the example
-              if (
-                  target_ids[i][j] >= 0
-              ):  # filter out padding from condensed rep. (padding is now lumped into correct)
-                  if not correct[i][j]:
-                      if not correct[i][j-1] and j > 0: 
-                        if chr(condensed_line[-1]) in [key for key in stylized_letters]:
-                          replacement_char = stylized_letters[chr(condensed_line[-1])]
-                          condensed_line[-1] = ord(replacement_char)
-                      condensed_line.append(target_ids[i][j].item())
-        if autocomplete_mode == "default": # default approach
-          for j in range(len(correct[i])):  # each character in the example
-              if (
-                  target_ids[i][j] >= 0
-              ):  # filter out padding from condensed rep. (padding is now lumped into correct)
-                  if not correct[i][j]:
-                      condensed_line.append(target_ids[i][j].item())
-                      sentinel_active = True
-                  elif sentinel_active:  # we got it and need to add an emoji
-                      condensed_line.append(128512)
-                      if output_style == "-short":
-                          sentinel_active = False  # replaces a whole string of correct predictions with just one emoji, rather than one emoji per character
-       
-        # CONSTRUCTING COMPRESSED REPRESENTATION IN THE CORRECT FORMAT       
+            for j in range(len(correct[i])):  # each character in the example
+                if (
+                    target_ids[i][j] >= 0
+                ):  # filter out padding from condensed rep. (padding is now lumped into correct)
+                    if not correct[i][j]:
+                        if j > 0 and not correct[i][j - 1]:
+                            if chr(condensed_line[-1]) in stylized_letters:
+                                replacement_char = stylized_letters[
+                                    chr(condensed_line[-1])
+                                ]
+                                condensed_line[-1] = ord(replacement_char)
+                        condensed_line.append(target_ids[i][j].item())
+        if autocomplete_mode == "default":  # default approach
+            for j in range(len(correct[i])):  # each character in the example
+                if (
+                    target_ids[i][j] >= 0
+                ):  # filter out padding from condensed rep. (padding is now lumped into correct)
+                    if not correct[i][j]:
+                        condensed_line.append(target_ids[i][j].item())
+                        sentinel_active = True
+                    elif sentinel_active:  # we got it and need to add an emoji
+                        condensed_line.append(128512)
+                        if output_style == "-short":
+                            sentinel_active = False  # replaces a whole string of correct predictions with just one emoji, rather than one emoji per character
+
+        # CONSTRUCTING COMPRESSED REPRESENTATION IN THE CORRECT FORMAT
         condensed_line_str = ""
         for item in condensed_line:
             if item > 0 and item < 256:
-              condensed_line_str += f"\\x{item:02x}" # format hex string correctly
+                condensed_line_str += f"\\x{item:02x}"  # format hex string correctly
             else:
                 condensed_line_str = condensed_line_str + chr(item)
         condensed_batch.append(condensed_line_str)
     # print(condensed_batch)
-    return condensed_batch, dict(run_length_dict)
+    return condensed_batch
 
 
-def get_predictions(logits, prediction_threshold, mode, temperature=1, id_for_unknown=-1):
-  if mode == "top_pred":
-    probs = F.softmax(logits / temperature, dim=-1) # converting each logit to %s
-    probs, preds = torch.max(probs, dim=-1) # one matrix for the each char prediction and another matrix for "confidence" of each prediction
-    preds = torch.where(probs >= prediction_threshold, preds, torch.tensor(id_for_unknown)) # (B,T)
-    # Compare all of probs to all of threshold. If the prediction is sufficiently confident, the prediction is used for the element. Otherwise, id_for_unknown used
-    return preds
-  else:
-    probs = F.softmax(logits / temperature, dim=-1) # converting each logit to %s
-    top_probs, top_preds = torch.topk(probs, k=2, dim=-1) # # one matrix for top 2 char predictions and another matrix for "confidence" of these predictions
+def get_predictions(
+    logits, prediction_threshold, mode, temperature=1, id_for_unknown=-1
+):
+    if mode == "top_pred":
+        probs = F.softmax(logits / temperature, dim=-1)  # converting each logit to %s
+        probs, preds = torch.max(
+            probs, dim=-1
+        )  # one matrix for the each char prediction and another matrix for "confidence" of each prediction
+        preds = torch.where(
+            probs >= prediction_threshold, preds, torch.tensor(id_for_unknown)
+        )  # (B,T)
+        # Compare all of probs to all of threshold. If the prediction is sufficiently confident, the prediction is used for the element. Otherwise, id_for_unknown used
+        return preds
+    else:
+        probs = F.softmax(logits / temperature, dim=-1)  # converting each logit to %s
+        top_probs, top_preds = torch.topk(
+            probs, k=2, dim=-1
+        )  # # one matrix for top 2 char predictions and another matrix for "confidence" of these predictions
 
-    top_guess_confidence = top_probs[:, :, 0] # all probs of top guess
-    second_guess_confidence = top_probs[:, :, 1] # all probs of second guess
-    top_guess = top_preds[:, :, 0] # the actual top guesses
+        top_guess_confidence = top_probs[:, :, 0]  # all probs of top guess
+        second_guess_confidence = top_probs[:, :, 1]  # all probs of second guess
+        top_guess = top_preds[:, :, 0]  # the actual top guesses
 
-    margin = top_guess_confidence - second_guess_confidence # gap between 1st and 2nd guesses
-    preds = torch.where(margin >= prediction_threshold, top_guess, torch.tensor(id_for_unknown)) 
-    # If the prediction is sufficiently confident, the prediction is used for the element. Otherwise, id_for_unknown used
-    return preds
-    
+        margin = (
+            top_guess_confidence - second_guess_confidence
+        )  # gap between 1st and 2nd guesses
+        preds = torch.where(
+            margin >= prediction_threshold, top_guess, torch.tensor(id_for_unknown)
+        )
+        # If the prediction is sufficiently confident, the prediction is used for the element. Otherwise, id_for_unknown used
+        return preds
 
 
 # "wrapper method" of sorts for creating condensed representations
 # initalizes model as best model from training then calls compress() repeatedly on batches of examples
-def tokenize(model, loader, model_dir, output_dir, examples_type, prediction_threshold=0.8, output_style="", prediction_mode="margin", autocomplete_mode="default"):
+def tokenize(
+    model,
+    loader,
+    model_dir,
+    output_dir,
+    examples_type,
+    prediction_threshold=0.8,
+    output_style="",
+    prediction_mode="margin",
+    autocomplete_mode="default",
+):
     checkpoint = torch.load(
         os.path.join(model_dir, "best_model.pt"), map_location="cpu"
     )
@@ -435,12 +505,21 @@ def tokenize(model, loader, model_dir, output_dir, examples_type, prediction_thr
 
     with open(output_path, "w") as writer:
         for input_ids, target_ids in tqdm(loader, total=total_batches):
-            
-            compressed, batch_run_lengths = compress(model, input_ids, target_ids, prediction_threshold, device, output_style, prediction_mode, autocomplete_mode)
+
+            compressed, batch_run_lengths = compress(
+                model,
+                input_ids,
+                target_ids,
+                prediction_threshold,
+                device,
+                output_style,
+                prediction_mode,
+                autocomplete_mode,
+            )
             for line in compressed:
                 writer.write(f"{line}\n")
             for k, v in batch_run_lengths.items():
-              global_run_length_dict[k] += v
+                global_run_length_dict[k] += v
 
     # add up run lengths from all batches
     # print(global_run_length_dict)
@@ -448,10 +527,9 @@ def tokenize(model, loader, model_dir, output_dir, examples_type, prediction_thr
     # print("Run length distribution:")
     sum = 0
     for key in sorted(global_run_length_dict):
-      sum = sum + (key * global_run_length_dict[key])
-      print(f"{key}: {global_run_length_dict[key]}")
+        sum = sum + (key * global_run_length_dict[key])
+        print(f"{key}: {global_run_length_dict[key]}")
     print(sum)
-
 
 
 if __name__ == "__main__":
@@ -516,27 +594,29 @@ if __name__ == "__main__":
     """
 
     specifications = {
-      "source_data": os.path.dirname(CORPORA["train"]),
-      "compression_model": "/mnt/storage/swexler/thesis-wexler/models/autocomplete-v5",
-      "prediction_threshold": 0.5, # float within (0,1)
-      "prediction_mode": "margin", # margin or top_pred (absolute)
-      "output_style": "short", # short or long
-      "date_compressed": "3_4_26",
-      "autocomplete_mode": "store_num_chars_autocompleted" 
+        "source_data": os.path.dirname(CORPORA["train"]),
+        "compression_model": "/mnt/storage/swexler/thesis-wexler/models/autocomplete-v5",
+        "prediction_threshold": 0.5,  # float within (0,1)
+        "prediction_mode": "margin",  # margin or top_pred (absolute)
+        "output_style": "short",  # short or long
+        "date_compressed": "3_4_26",
+        "autocomplete_mode": "store_num_chars_autocompleted",
     }
     desired_output_dir = (
-      "/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_" 
-      + specifications["date_compressed"] + "-" 
-      + str(specifications["prediction_threshold"]) + "-" 
-      + specifications["prediction_mode"] + specifications["autocomplete_mode"]
-    ) 
+        "/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_"
+        + specifications["date_compressed"]
+        + "-"
+        + str(specifications["prediction_threshold"])
+        + "-"
+        + specifications["prediction_mode"]
+        + specifications["autocomplete_mode"]
+    )
 
     ## Making json with how we compressed the files
     os.makedirs(desired_output_dir, exist_ok=True)
     documentation_path = os.path.join(desired_output_dir, "specs.json")
     with open(documentation_path, "w") as f:
         json.dump(specifications, f, indent=4)
-
 
     print("BEGINNING TOKENIZATION")
     tokenize(
@@ -548,7 +628,7 @@ if __name__ == "__main__":
         prediction_threshold=specifications["prediction_threshold"],
         prediction_mode=specifications["prediction_mode"],
         output_style=specifications["output_style"],
-        autocomplete_mode=specifications["autocomplete_mode"]
+        autocomplete_mode=specifications["autocomplete_mode"],
     )
     tokenize(
         model,
@@ -559,7 +639,7 @@ if __name__ == "__main__":
         prediction_threshold=specifications["prediction_threshold"],
         prediction_mode=specifications["prediction_mode"],
         output_style=specifications["output_style"],
-        autocomplete_mode=specifications["autocomplete_mode"]
+        autocomplete_mode=specifications["autocomplete_mode"],
     )
 
     # tokenize(
@@ -573,10 +653,6 @@ if __name__ == "__main__":
     #     output_style=specifications["output_style"],
     #     autocomplete_mode=specifications["autocomplete_mode"]
     # )
-
-
-
-
 
     # ONE CHAR DUMMY
     # dummy_dataset = FileBasedLMData(
