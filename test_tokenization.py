@@ -301,9 +301,67 @@ class TestTokenization(unittest.TestCase):
             tokenized["attention_mask"].tolist(), expected["attention_mask"].tolist()
         )
 
+    def test_sentinel_tokenizer_multiple_emojis(self):
+      tokenizer = SentinelTokenizer(offset=50, max_length=5)
+      lines = [
+          r"\x54😈",
+          r"😇\x6e😂\x47😇",
+      ]
+      tokenized = tokenizer(lines, lang_code="fra_Latn")
+      lang_id = tokenizer.get_special_tokens()["fra_Latn"]
+      eos = tokenizer.get_special_tokens()["<eos>"]
+      pad = tokenizer.get_special_tokens()["<pad>"]
+      devil_sentinel = tokenizer.get_special_tokens()["😈"]
+      angel_sentinel = tokenizer.get_special_tokens()["😇"]
+      laughing_crying_sentinel = tokenizer.get_special_tokens()["😂"]
+      expected = {
+          "input_ids": tensor(
+              [
+                  [lang_id, 0x86, devil_sentinel, eos, pad],
+                  [lang_id, angel_sentinel, 0xA0, laughing_crying_sentinel, eos],
+              ]
+          ),
+          "attention_mask": tensor([[1] * 4 + [0], [1] * 5]),
+      }
+      self.assertEqual(
+          tokenized["input_ids"].tolist(), expected["input_ids"].tolist()
+      )
+      self.assertEqual(
+          tokenized["attention_mask"].tolist(), expected["attention_mask"].tolist()
+      )
+
+    def test_sentinel_tokenizer_multiple_char_types(self):
+      tokenizer = SentinelTokenizer(offset=50, max_length=5)
+      lines = [
+          r"\x54ğ",
+          r"Ė\x6e⑧\x47¿",
+      ]
+      tokenized = tokenizer(lines, lang_code="fra_Latn")
+      lang_id = tokenizer.get_special_tokens()["fra_Latn"]
+      eos = tokenizer.get_special_tokens()["<eos>"]
+      pad = tokenizer.get_special_tokens()["<pad>"]
+      curly_lower_g = tokenizer.get_special_tokens()["ğ"]
+      curly_upper_e = tokenizer.get_special_tokens()["Ė"]
+      fancy_eight = tokenizer.get_special_tokens()["⑧"]
+      expected = {
+          "input_ids": tensor(
+              [
+                  [lang_id, 0x86, curly_lower_g, eos, pad],
+                  [lang_id, curly_upper_e, 0xA0, fancy_eight, eos],
+              ]
+          ),
+          "attention_mask": tensor([[1] * 4 + [0], [1] * 5]),
+      }
+      self.assertEqual(
+          tokenized["input_ids"].tolist(), expected["input_ids"].tolist()
+      )
+      self.assertEqual(
+          tokenized["attention_mask"].tolist(), expected["attention_mask"].tolist()
+      )
+
     def test_sentinel_tokenizer4(self):
       tokenizer = SentinelTokenizer()
-      self.assertEqual(len(tokenizer), 263)
+      self.assertEqual(len(tokenizer), 341)
 
 if __name__ == "__main__":
     unittest.main()

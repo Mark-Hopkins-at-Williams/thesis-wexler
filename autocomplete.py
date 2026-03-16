@@ -331,8 +331,6 @@ def compress(
 
     logits = model(input_ids)  # (B, T, vocab_size)
 
-    run_length_dict = defaultdict(int)
-
     id_for_unknown = -1  # What to return if threshold isn't met for any token
     temperature = 1
 
@@ -387,8 +385,10 @@ def compress(
                                 is_last = True
 
                         if is_last:  # we only add emojis at the end of a run
-                            condensed_line.append(128512 + num_correct)
-                            run_length_dict[num_correct] += 1
+                            if num_correct >= 8:
+                              condensed_line.append(128512 + 8)
+                            else:
+                              condensed_line.append(128512 + num_correct)
                             num_correct = 0
                             is_last = False
 
@@ -399,18 +399,18 @@ def compress(
                 ):  # filter out padding from condensed rep. (padding is now lumped into correct)
                     if not correct[i][j]:
                         condensed_line.append(target_ids[i][j].item())
-        if autocomplete_mode == "two_types_english_chars":
+        if autocomplete_mode == "two_types_english_chars": # every hint except last one in chunk is stylized
             for j in range(len(correct[i])):  # each character in the example
                 if (
                     target_ids[i][j] >= 0
                 ):  # filter out padding from condensed rep. (padding is now lumped into correct)
                     if not correct[i][j]:
-                        if j > 0 and not correct[i][j - 1]:
-                            if chr(condensed_line[-1]) in stylized_letters:
-                                replacement_char = stylized_letters[
+                        if j > 0 and not correct[i][j - 1]: # if the previous letter was also a hint
+                            if chr(condensed_line[-1]) in stylized_letters: 
+                                replacement_char = stylized_letters[ # replace the previous hint with stylized version
                                     chr(condensed_line[-1])
                                 ]
-                                condensed_line[-1] = ord(replacement_char)
+                                condensed_line[-1] = ord(replacement_char) # condensed_line stores ints
                         condensed_line.append(target_ids[i][j].item())
         if autocomplete_mode == "default":  # default approach
             for j in range(len(correct[i])):  # each character in the example
@@ -491,8 +491,6 @@ def tokenize(
     model.to(device)
     print("BEGINNING COMPRESSION")
 
-    global_run_length_dict = defaultdict(int)
-
     total_lines = get_total_lines(loader.dataset.filepath)
     total_batches = math.ceil(total_lines / loader.batch_size)
 
@@ -506,7 +504,7 @@ def tokenize(
     with open(output_path, "w") as writer:
         for input_ids, target_ids in tqdm(loader, total=total_batches):
 
-            compressed, batch_run_lengths = compress(
+            compressed = compress(
                 model,
                 input_ids,
                 target_ids,
@@ -518,18 +516,7 @@ def tokenize(
             )
             for line in compressed:
                 writer.write(f"{line}\n")
-            for k, v in batch_run_lengths.items():
-                global_run_length_dict[k] += v
 
-    # add up run lengths from all batches
-    # print(global_run_length_dict)
-
-    # print("Run length distribution:")
-    sum = 0
-    for key in sorted(global_run_length_dict):
-        sum = sum + (key * global_run_length_dict[key])
-        print(f"{key}: {global_run_length_dict[key]}")
-    print(sum)
 
 
 if __name__ == "__main__":
@@ -591,16 +578,20 @@ if __name__ == "__main__":
                          no_autocomplete_chars
                          two_types_english_chars
                          default
+
+    prediction thresholds testing:
+    margin   = 0.1, 0.3, 0.5
+    top_pred = 0.3, 0.5, 0.7
     """
 
     specifications = {
         "source_data": os.path.dirname(CORPORA["train"]),
         "compression_model": "/mnt/storage/swexler/thesis-wexler/models/autocomplete-v5",
         "prediction_threshold": 0.5,  # float within (0,1)
-        "prediction_mode": "margin",  # margin or top_pred (absolute)
+        "prediction_mode": "top_pred",  # margin or top_pred (absolute)
         "output_style": "short",  # short or long
-        "date_compressed": "3_4_26",
-        "autocomplete_mode": "store_num_chars_autocompleted",
+        "date_compressed": "3_15_26",
+        "autocomplete_mode": "two_types_english_chars",
     }
     desired_output_dir = (
         "/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_"
@@ -609,6 +600,7 @@ if __name__ == "__main__":
         + str(specifications["prediction_threshold"])
         + "-"
         + specifications["prediction_mode"]
+        + "-"
         + specifications["autocomplete_mode"]
     )
 
@@ -642,18 +634,21 @@ if __name__ == "__main__":
         autocomplete_mode=specifications["autocomplete_mode"],
     )
 
-    # tokenize(
-    #     model,
-    #     train_loader,
-    #     model_dir=specifications["compression_model"],
-    #     output_dir=desired_output_dir,
-    #     examples_type="train",
-    #     prediction_threshold=specifications["prediction_threshold"],
-    #     prediction_mode=specifications["prediction_mode"],
-    #     output_style=specifications["output_style"],
-    #     autocomplete_mode=specifications["autocomplete_mode"]
-    # )
+    tokenize(
+        model,
+        train_loader,
+        model_dir=specifications["compression_model"],
+        output_dir=desired_output_dir,
+        examples_type="train",
+        prediction_threshold=specifications["prediction_threshold"],
+        prediction_mode=specifications["prediction_mode"],
+        output_style=specifications["output_style"],
+        autocomplete_mode=specifications["autocomplete_mode"]
+    )
 
+    """
+    BELOW HERE IS DUMMY DATASET 
+    """
     # ONE CHAR DUMMY
     # dummy_dataset = FileBasedLMData(
     #     "examples/one-char-examining/one-char.eng",
@@ -674,7 +669,7 @@ if __name__ == "__main__":
     #     prediction_threshold=0.5,
     #     output_style="short",
     #     prediction_mode="margin",
-    #     autocomplete_mode="store_num_chars_autocompleted"
+    #     autocomplete_mode="two_types_english_chars"
     # )
 
     """ 

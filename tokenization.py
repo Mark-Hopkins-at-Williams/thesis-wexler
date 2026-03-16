@@ -8,6 +8,7 @@ import torch
 from torch.nn.utils.rnn import pad_sequence
 from transformers.tokenization_utils_base import BatchEncoding
 import re
+import autocomplete # to get access to STYLIZED_TOKENS
 
 
 class Tokenizer(ABC):
@@ -114,21 +115,41 @@ class ByteTokenizer(Tokenizer):
 
 class SentinelTokenizer(Tokenizer):
     def __init__(self, encoding="utf-8", max_length=None, offset=0):
-        # define full vocabulary for eng-fra
+        ## DEFINE FULL VOCAB FOR ENG-FRA
+
+        # special tokens
         self.beg_token = "<bos>"
         self.end_token = "<eos>"
         self.pad_token = "<pad>"
         self.mask_token = "<mask>"
-        self.autocomplete_token = "😀"
-        self.special_tokens = [
-            self.beg_token,
-            self.end_token,
-            self.pad_token,
-            self.mask_token,
-            self.autocomplete_token,
-            "eng_Latn",
-            "fra_Latn",
+
+        # autocomplete tokens (default + len-encoded emojis)
+        self.autocomplete_tokens = [
+          "😀",
+          "😁",
+          "😂",
+          "😃",
+          "😄",
+          "😅",
+          "😆",
+          "😇",
+          "😈"
         ]
+
+        self.stylized_characters = list(autocomplete.STYLIZED_LETTERS.values())
+
+        self.special_tokens = [
+          self.beg_token,
+          self.end_token,
+          self.pad_token,
+          self.mask_token,
+          *self.autocomplete_tokens, # unpacking essentially gets all items from list
+          *self.stylized_characters,
+          "eng_Latn",
+          "fra_Latn",
+        ]
+
+        # create the hex vocab and add special tokens
         self.vocab = [f"{i:02x}" for i in range(256)] + self.special_tokens
         self.max_length = max_length
 
@@ -145,39 +166,49 @@ class SentinelTokenizer(Tokenizer):
     def __call__(self, sents: List[str], lang_code="eng_Latn"):
         self.src_lang = lang_code
 
+        ## GENERATE LIST OF TOKEN IDs
         encoded = []
         for sent in sents:
-            itemized = re.split(f"({re.escape(self.autocomplete_token)})", sent) # () means keep smileys in the list
+            ## SPLIT INPUT FILE ON EMOJIS
+            multiple_emojis_pattern = "|".join(re.escape(emoji) for emoji in self.autocomplete_tokens)
+            itemized = re.split(f"({multiple_emojis_pattern})", sent) # () means keep emojis in the list
             tokens = []
             for part in itemized:
-              if part == self.autocomplete_token:
-                tokens.append(self.mappings[self.autocomplete_token])
+              ## PARSE EMOJIS
+              if part in self.autocomplete_tokens:
+                tokens.append(self.mappings[part])
+              ## PARSE HEX CODES / STYLIZED LETTERS
               else:
-                sub_pattern = r"\\x([0-9a-fA-F]{2})"
-                for m in re.finditer(sub_pattern, part): # in case 'hint' is multiple chars long
-                  h = m.group(1)  # m.group(1) is the hex digits
-                  tokens.append(self.mappings[h]) # h = something like 4e
+                # matches either hex ("\x41") or stylized character ("ř")
+                sub_pattern = r"\\x([0-9a-fA-F]{2})|." # capture group is just the hex
+                for m in re.finditer(sub_pattern, part): 
+                  h = m.group(1) if m.group(1) else m.group() # match stored in group(1) for hex and group() for stylized letter
+                  tokens.append(self.mappings[h]) # h = of form 4e or ṁ
 
+            ## GENERATE TENSOR WITH BOS / EOS TOKENS
             ids = torch.tensor(
                 [self.mappings[self.src_lang]]
                 + tokens
                 + [self.mappings[self.end_token]],
                 dtype=torch.long,
             )
+
+            ## TRUNCATE SEQUENCES THAT ARE TOO LONG
             if (
                 self.max_length != None and ids.size(0) > self.max_length
-            ):  # truncate sequences that are too long
+            ): 
                 ids = ids[: self.max_length]
                 ids[self.max_length - 1] = self.mappings[
                     self.end_token
                 ]  # insert EOS token in truncated sequences
             encoded.append(ids)
 
-        # Pad all sequences to the same length
+        ## PAD ALL EXAMPLES TO THE SAME LENGTH
         input_ids = pad_sequence(
             encoded, batch_first=True, padding_value=self.mappings[self.pad_token]
         )
-        # Create attention mask (1 where token is not PAD)
+
+        ## CREATE ATTENTION MASK (1 where token is not PAD)
         attention_mask = (input_ids != self.mappings[self.pad_token]).long()
 
         return BatchEncoding(
