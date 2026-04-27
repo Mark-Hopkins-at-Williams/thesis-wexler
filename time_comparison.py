@@ -26,6 +26,17 @@ def get_full_translation_time(experiment_dir, compressed_test, num_lines=-1):
     else torch.device("cpu")
   )
 
+  # LOAD AUTOCOMPLETE MODEL (BEFORE TIMER STARTS)
+  autocomplete_model = DecoderOnlyTransformer(
+      vocab_size=263,
+      d_model=1024,
+      nhead=16,
+      num_layers=2,
+      dim_feedforward=512,
+      dropout=0.1,
+      max_len=1024,
+    ).to(device)
+
   # LOAD CONFIG
   config_file = Path(experiment_dir) / "experiment.json"
   with open(config_file) as reader:
@@ -55,7 +66,7 @@ def get_full_translation_time(experiment_dir, compressed_test, num_lines=-1):
     test_dataset = FileBasedLMData(test_set_path, max_length=1024)
     test_loader = DataLoader(
         test_dataset,
-        batch_size=32,
+        batch_size=1,
         num_workers=0,
         collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
     )
@@ -76,15 +87,7 @@ def get_full_translation_time(experiment_dir, compressed_test, num_lines=-1):
     }
     desired_output_dir = "/mnt/storage/swexler/thesis-wexler/examples/time-directory/"
 
-    autocomplete_model = DecoderOnlyTransformer(
-      vocab_size=263,
-      d_model=1024,
-      nhead=16,
-      num_layers=2,
-      dim_feedforward=512,
-      dropout=0.1,
-      max_len=1024,
-    ).to(device)
+    
 
     tokenize( # actually compresses
         autocomplete_model,
@@ -104,7 +107,6 @@ def get_full_translation_time(experiment_dir, compressed_test, num_lines=-1):
   # PREP FOR TRANSLATION
   start_non_compressed = time.time()
   ft_params = read_finetuning_params(config)
-  model = AutoModelForSeq2SeqLM.from_pretrained(experiment_dir)
   if num_lines == -1:
     if compressed_test == True:
       text_files = {
@@ -172,11 +174,11 @@ def get_full_translation_time(experiment_dir, compressed_test, num_lines=-1):
 
 if __name__ == "__main__":
   for i in range(1):
-    get_full_translation_time("/mnt/storage/swexler/thesis-wexler/models/french-training-v126/", compressed_test=False, num_lines=64) #Byte-BPE 605k steps
-    get_full_translation_time("/mnt/storage/swexler/thesis-wexler/models/french-training-v110/", compressed_test=True, num_lines=64) # Compressed, 57.5%, stylized letters
-    get_full_translation_time("/mnt/storage/swexler/thesis-wexler/models/french-training-v109/", compressed_test=True, num_lines=64) #compressed, 44.7%, stylized letters
-    get_full_translation_time("/mnt/storage/swexler/thesis-wexler/models/french-training-v117/", compressed_test=True, num_lines=64) # Compressed, 32.1%, stylized letters
-    get_full_translation_time("/mnt/storage/swexler/thesis-wexler/models/french-training-v82/", compressed_test=False, num_lines=64) #BPE-BPE 200k steps
+    get_full_translation_time("/mnt/storage/swexler/thesis-wexler/models/french-training-v126/", compressed_test=False) #Byte-BPE 605k steps
+    get_full_translation_time("/mnt/storage/swexler/thesis-wexler/models/french-training-v110/", compressed_test=True) # Compressed, 57.5%, stylized letters
+    get_full_translation_time("/mnt/storage/swexler/thesis-wexler/models/french-training-v109/", compressed_test=True) #compressed, 44.7%, stylized letters
+    get_full_translation_time("/mnt/storage/swexler/thesis-wexler/models/french-training-v117/", compressed_test=True) # Compressed, 32.1%, stylized letters
+    get_full_translation_time("/mnt/storage/swexler/thesis-wexler/models/french-training-v82/", compressed_test=False) #BPE-BPE 200k steps
     print()
     print()
   
