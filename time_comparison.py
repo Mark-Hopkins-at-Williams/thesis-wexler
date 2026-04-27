@@ -12,9 +12,10 @@ import json
 from configure import read_finetuning_params, harvest_language_codes, initialize_tokenizers, USE_CUDA
 import os
 from myutil import logger
+from file_examining import copy_first_lines
 
 
-def get_full_translation_time(experiment_dir, compressed_test):
+def get_full_translation_time(experiment_dir, compressed_test, num_lines=-1):
   # torch.cuda.set_device(0)
   model = AutoModelForSeq2SeqLM.from_pretrained(experiment_dir)
   model.cuda()
@@ -34,13 +35,24 @@ def get_full_translation_time(experiment_dir, compressed_test):
   experiment_number = experiment_dir.split("-")[-1]
   experiment_number = experiment_number[:-1]
 
+  # GET SUBSETS OF TEST DATA FOR QUICKER EXPERIMENTS
+  if num_lines != -1:
+    copy_first_lines("/mnt/storage/swexler/thesis-wexler/examples/french-data-7-mil-512-filtered/test.eng", 
+                     "/mnt/storage/swexler/thesis-wexler/examples/time-directory/test_shorter.eng", 
+                     num_lines)
+    copy_first_lines("/mnt/storage/swexler/thesis-wexler/examples/french-data-7-mil-512-filtered/test.fr", 
+                     "/mnt/storage/swexler/thesis-wexler/examples/time-directory/test_shorter.fr", 
+                     num_lines)
+
   # COMPRESS TEST SET
   if compressed_test == True:
     start_compressed = time.time()
-    CORPORA = {
-      "test": "/mnt/storage/swexler/thesis-wexler/examples/french-data-7-mil-512-filtered/test.eng",
-    }
-    test_dataset = FileBasedLMData(CORPORA["test"], max_length=1024)
+    if num_lines == -1:
+      test_set_path = "/mnt/storage/swexler/thesis-wexler/examples/french-data-7-mil-512-filtered/test.eng"
+    else:
+      test_set_path = "/mnt/storage/swexler/thesis-wexler/examples/time-directory/test_shorter.eng"
+
+    test_dataset = FileBasedLMData(test_set_path, max_length=1024)
     test_loader = DataLoader(
         test_dataset,
         batch_size=32,
@@ -54,7 +66,7 @@ def get_full_translation_time(experiment_dir, compressed_test):
     parts = dirname.split("-")
 
     specifications = {
-        "source_data": os.path.dirname(CORPORA["test"]),
+        "source_data": os.path.dirname(test_set_path),
         "compression_model": "/mnt/storage/swexler/thesis-wexler/models/autocomplete-v5",
         "prediction_threshold": float(parts[-3]),  # float within (0,1)
         "prediction_mode": parts[-2],  # margin or top_pred (absolute)
@@ -86,23 +98,36 @@ def get_full_translation_time(experiment_dir, compressed_test):
         autocomplete_mode=specifications["autocomplete_mode"],
     )
     time_to_compress = time.time() - start_compressed
-    logger(f"COMPRESSION TIME (exp dir {experiment_number}) = {round(time_to_compress,3)}")
+    logger(f"COMPRESSION TIME (exp dir {experiment_number}) ({'all' if num_lines == -1 else num_lines} lines) = {round(time_to_compress,3)}")
 
 
   # PREP FOR TRANSLATION
   start_non_compressed = time.time()
   ft_params = read_finetuning_params(config)
   model = AutoModelForSeq2SeqLM.from_pretrained(experiment_dir)
-  if compressed_test == True:
-    text_files = {
-        ("test", "eng"): f"{desired_output_dir}compressed-test-short.eng", # use the compressed data we created above
-        ("test", "fra"): "/mnt/storage/swexler/thesis-wexler/examples/french-data-7-mil-512-filtered/test.fr",
-    }
+  if num_lines == -1:
+    if compressed_test == True:
+      text_files = {
+          ("test", "eng"): f"{desired_output_dir}compressed-test-short.eng", # use the compressed data we created above
+          ("test", "fra"): "/mnt/storage/swexler/thesis-wexler/examples/french-data-7-mil-512-filtered/test.fr",
+      }
+    else:
+      text_files = {
+          ("test", "eng"): "/mnt/storage/swexler/thesis-wexler/examples/french-data-7-mil-512-filtered/test.eng", 
+          ("test", "fra"): "/mnt/storage/swexler/thesis-wexler/examples/french-data-7-mil-512-filtered/test.fr",
+      }
   else:
-    text_files = {
-        ("test", "eng"): "/mnt/storage/swexler/thesis-wexler/examples/french-data-7-mil-512-filtered/test.eng", 
-        ("test", "fra"): "/mnt/storage/swexler/thesis-wexler/examples/french-data-7-mil-512-filtered/test.fr",
-    }
+    if compressed_test == True:
+      text_files = {
+          ("test", "eng"): f"{desired_output_dir}compressed-test-short.eng", # use the compressed data we created above
+          ("test", "fra"): "/mnt/storage/swexler/thesis-wexler/examples/time-directory/test_shorter.fr",
+      }
+    else:
+      text_files = {
+          ("test", "eng"): "/mnt/storage/swexler/thesis-wexler/examples/time-directory/test_shorter.eng", 
+          ("test", "fra"): "/mnt/storage/swexler/thesis-wexler/examples/time-directory/test_shorter.fr",
+      }
+
 
 
 
@@ -117,7 +142,7 @@ def get_full_translation_time(experiment_dir, compressed_test):
       batch_size=32,
       only_once_thru=True,
   )
-  # logger("BEGINNING TOKENIZATION")
+  logger("BEGINNING TOKENIZATION")
   # logger(src_tokenizer)
   # logger(tgt_tokenizer)
   # logger(test_data)
@@ -130,7 +155,7 @@ def get_full_translation_time(experiment_dir, compressed_test):
   )
 
   ## TRANSLATE TEST DATASET
-  # logger("BEGINNING TRANSLATION")
+  logger("BEGINNING TRANSLATION")
   translations = translate_tokenized_mixture_of_bitexts(
       tokenized_test, model, tgt_tokenizer, lang_codes
   )
@@ -138,20 +163,20 @@ def get_full_translation_time(experiment_dir, compressed_test):
   # PRINT RESULTS
   if compressed_test == True:
     duration = time.time() - start_compressed
-    logger(f"COMPRESSED DURATION (exp dir {experiment_number}) = {round(duration, 3)}")
+    logger(f"COMPRESSED DURATION (exp dir {experiment_number}) ({'all' if num_lines == -1 else num_lines} lines) = {round(duration, 3)}")
   else:
     duration = time.time() - start_non_compressed
-    logger(f"STANDARD DURATION = (exp dir {experiment_number}) {round(duration, 3)}")
+    logger(f"STANDARD DURATION = (exp dir {experiment_number}) ({'all' if num_lines == -1 else num_lines} lines) = {round(duration, 3)}")
   print("------")
 
 
 if __name__ == "__main__":
-  for i in range(5):
-    get_full_translation_time("/mnt/storage/swexler/thesis-wexler/models/french-training-v126/", compressed_test=False) #Byte-BPE 605k steps
-    get_full_translation_time("/mnt/storage/swexler/thesis-wexler/models/french-training-v110/", compressed_test=True) # Compressed, 57.5%, stylized letters
-    get_full_translation_time("/mnt/storage/swexler/thesis-wexler/models/french-training-v109/", compressed_test=True) #compressed, 44.7%, stylized letters
-    get_full_translation_time("/mnt/storage/swexler/thesis-wexler/models/french-training-v117/", compressed_test=True) # Compressed, 32.1%, stylized letters
-    get_full_translation_time("/mnt/storage/swexler/thesis-wexler/models/french-training-v82/", compressed_test=False) #BPE-BPE 200k steps
+  for i in range(1):
+    get_full_translation_time("/mnt/storage/swexler/thesis-wexler/models/french-training-v126/", compressed_test=False, num_lines=64) #Byte-BPE 605k steps
+    get_full_translation_time("/mnt/storage/swexler/thesis-wexler/models/french-training-v110/", compressed_test=True, num_lines=64) # Compressed, 57.5%, stylized letters
+    get_full_translation_time("/mnt/storage/swexler/thesis-wexler/models/french-training-v109/", compressed_test=True, num_lines=64) #compressed, 44.7%, stylized letters
+    get_full_translation_time("/mnt/storage/swexler/thesis-wexler/models/french-training-v117/", compressed_test=True, num_lines=64) # Compressed, 32.1%, stylized letters
+    get_full_translation_time("/mnt/storage/swexler/thesis-wexler/models/french-training-v82/", compressed_test=False, num_lines=64) #BPE-BPE 200k steps
     print()
     print()
   
