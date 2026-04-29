@@ -135,7 +135,6 @@ def get_full_translation_time(experiment_dir, compressed_test, num_lines=-1):
         autocomplete_mode=specifications["autocomplete_mode"],
     )
     time_after_compressing = time.time()
-    # logger(f"COMPRESSION TIME (exp dir {experiment_number}) ({'all' if num_lines == -1 else num_lines} lines) = {time_to_compress} sec.")
 
 
   ## BEGINNING OF TRANSLATION PIPELINE
@@ -146,54 +145,74 @@ def get_full_translation_time(experiment_dir, compressed_test, num_lines=-1):
   test_data = MixtureOfBitexts.create_from_files(
       text_files,
       [(("test", "eng"), ("test", "fra"), None)],
-      batch_size=32,
+      batch_size=1,
       only_once_thru=True,
   )
   logger("--beginning tokenization")
+
+  time_before_tokenizing = time.time()
   tokenized_test = TokenizedMixtureOfBitexts(
       test_data,
       src_tokenizer,
       tgt_tokenizer,
       lang_codes=lang_codes,
   )
+  time_after_tokenizing = time.time()
 
   # TRANSLATE TEST DATASET
   logger("--beginning translation")
   with torch.no_grad():
+    total_encoding_time = 0
+    total_decoding_time = 0
     batch = tokenized_test.next_batch()
     while batch is not None:
-      x, y, _, _ = batch
-      x = x.to(model.device)
-      y = y.to(model.device)
-      model(**x, labels=y.input_ids)
-      batch = tokenized_test.next_batch()
+        x, y, _, _ = batch
+        x = x.to(model.device)
+        y = y.to(model.device)
+
+        # encoding
+        time_before_encoding = time.time()
+        encoder_outputs = model.get_encoder()(**x)
+        time_after_encoding = time.time()
+
+        # decoding
+        model(
+            encoder_outputs=encoder_outputs,
+            attention_mask=x["attention_mask"],
+            labels=y.input_ids
+        )
+        time_after_decoding = time.time()
+
+        # adding this batch's times to total time
+        total_encoding_time += round(time_after_encoding - time_before_encoding, 3)
+        total_decoding_time += round(time_after_decoding - time_after_encoding, 3)
+
+        batch = tokenized_test.next_batch()
   time_after_translating = time.time()
 
-  # CONSOLIDATE RESULTS
+
+  # RETURN RESULTS
   if compressed_test == True:
-    """
-    Time stamps available: time_after_setting_up_compressed, 
-                           time_after_compressing,
-                           time_after_translating
-    """
     return {
       "experiment_type": src_tokenizer,
       "experiment_dir": experiment_number,
       "num_lines": 'all' if num_lines == -1 else num_lines,
       "compression_time": round(time_after_compressing - time_after_setting_up_compressed, 3),
+      "tokenization_time": round(time_after_tokenizing - time_before_tokenizing, 3),
+      "encoding_time": total_encoding_time,
+      "decoding_time": total_decoding_time,
       "translation_time": round(time_after_translating - time_after_compressing, 3),
       "end_to_end_time": round(time_after_translating - time_after_setting_up_compressed, 3)
     }
 
   else:
-    """
-    Time stamps available: time_after_setting_up_non_compressed, 
-                           time_after_translating
-    """
     return {
       "experiment_type": src_tokenizer,
       "experiment_dir": experiment_number,
       "num_lines": 'all' if num_lines == -1 else num_lines,
+      "tokenization_time": round(time_after_tokenizing - time_before_tokenizing, 3),
+      "encoding_time": total_encoding_time,
+      "decoding_time": total_decoding_time,
       "translation_time": round(time_after_translating - time_after_setting_up_non_compressed, 3),
       "end_to_end_time": round(time_after_translating - time_after_setting_up_non_compressed, 3)
     }
@@ -204,9 +223,10 @@ def get_full_translation_time(experiment_dir, compressed_test, num_lines=-1):
 
 # DRIVER CODE
 if __name__ == "__main__":
-  num_lines = 640
 
-  # ALL EXPERIMENTS WE HOPE TO TEST
+  # SPECIFICATIONS OF WHAT WE ARE TESTING
+  num_lines = 640
+  num_iterations = 1
   experiments = [
     ("/mnt/storage/swexler/thesis-wexler/models/french-training-v126/", False, num_lines, "Byte"),
     ("/mnt/storage/swexler/thesis-wexler/models/french-training-v110/", True, num_lines, "Compressed-57.5"),
@@ -215,12 +235,16 @@ if __name__ == "__main__":
     ("/mnt/storage/swexler/thesis-wexler/models/french-training-v82/", False, num_lines, "BPE"),
   ]
 
-  results_end_to_end = defaultdict(list) # storing end to end time
-  results_translation = defaultdict(list) # storing translation only time
+  # MAKING DATA STRUCTURES WHERE RESULTS WILL BE STORED
   results_compression = defaultdict(list) # storing compression time
+  results_tokenization = defaultdict(list)
+  results_translation = defaultdict(list) # storing translation only time
+  results_encoding = defaultdict(list) # storing time to encode
+  results_decoding = defaultdict(list) # storing time to decode
+  results_end_to_end = defaultdict(list) # storing end to end time
 
-  # RUNNING THE SCRIPT
-  for i in range(1, 4):
+  # RUNNING THE ABOVE METHOD
+  for i in range(1, num_iterations+1):
     print(f"Iteration {i}")
 
     shuffled_experiments = experiments[:] # shallow copy of experiments
@@ -234,6 +258,9 @@ if __name__ == "__main__":
       # add time to that experiment's list of times
       results_end_to_end[label].append(result["end_to_end_time"])
       results_translation[label].append(result["translation_time"])
+      results_encoding[label].append(result["encoding_time"])
+      results_decoding[label].append(result["decoding_time"])
+      results_tokenization[label].append(result["tokenization_time"])
       if compressed_test_local == True:
         results_compression[label].append(result["compression_time"])
 
@@ -241,9 +268,23 @@ if __name__ == "__main__":
     print()
 
   # CALCULATE AND DISPLAY AVERAGES ACROSS ALL ITERATIONS
-  averages_end_to_end = {k: round(sum(v) / len(v), 3) for k, v in results_end_to_end.items()}
-  averages_translation = {k: round(sum(v) / len(v), 3) for k, v in results_translation.items()}
-  averages_compression = {k: round(sum(v) / len(v), 3) for k, v in results_compression.items()}
-  print(f"Avg end-to-end time: {averages_end_to_end}")
-  print(f"Avg translation time: {averages_translation}")
-  print(f"Avg compression time: {averages_compression}")
+  def get_average_time(my_dict):
+    return {k: round(sum(v) / len(v), 3) for k, v in my_dict.items()}
+
+  averages_end_to_end = get_average_time(results_end_to_end)
+  averages_translation = get_average_time(results_translation)
+  averages_compression = get_average_time(results_compression)
+  averages_tokenization = get_average_time(results_tokenization)
+  averages_encoding = get_average_time(results_encoding)
+  averages_decoding = get_average_time(results_decoding)
+
+  def sort_by_key(my_dict): # standardize order of (k,v) pairs when printing results
+    return dict(sorted(my_dict.items()))
+
+  print(f"Avg end-to-end time: {sort_by_key(averages_end_to_end)}")
+  print(f"Avg tokenization time: {sort_by_key(averages_tokenization)}")
+  print(f"Avg translation time (incl. tokenization): {sort_by_key(averages_translation)}")
+  print(f"Avg compression time: {sort_by_key(averages_compression)}")
+  print(f"Avg encoding time: {sort_by_key(averages_encoding)}")
+  print(f"Avg decoding time: {sort_by_key(averages_decoding)}")
+
