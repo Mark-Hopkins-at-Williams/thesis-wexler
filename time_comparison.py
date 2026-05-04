@@ -15,6 +15,7 @@ from myutil import logger
 from file_examining import copy_first_lines
 import random
 from collections import defaultdict
+import statistics as stats
 
 
 def get_full_translation_time(experiment_dir, compressed_test, num_lines=-1):
@@ -140,7 +141,9 @@ def get_full_translation_time(experiment_dir, compressed_test, num_lines=-1):
   ## BEGINNING OF TRANSLATION PIPELINE
   time_after_setting_up_non_compressed = time.time() # =================TIMER STARTS===========================
   
-  # TOKENIZE TEST DATASET
+  # SET UP REFERENCES FOR TOKENIZATION
+  time_before_tokenizing_setup = time.time()
+
   lang_codes = {("test", "eng"): "eng_Latn", ("test", "fra"): "fra_Latn"}
   test_data = MixtureOfBitexts.create_from_files(
       text_files,
@@ -148,22 +151,21 @@ def get_full_translation_time(experiment_dir, compressed_test, num_lines=-1):
       batch_size=1,
       only_once_thru=True,
   )
-  logger("--beginning tokenization")
 
-  time_before_tokenizing = time.time()
   tokenized_test = TokenizedMixtureOfBitexts(
       test_data,
       src_tokenizer,
       tgt_tokenizer,
       lang_codes=lang_codes,
   )
-  time_after_tokenizing = time.time()
+  time_after_tokenizing_setup = time.time()
 
   # TRANSLATE TEST DATASET
   logger("--beginning translation")
   with torch.no_grad():
     total_encoding_time = 0
     total_decoding_time = 0
+    total_tokenization_time = 0
     batch = tokenized_test.next_batch()
     while batch is not None:
         x, y, _, _ = batch
@@ -186,8 +188,13 @@ def get_full_translation_time(experiment_dir, compressed_test, num_lines=-1):
         # adding this batch's times to total time
         total_encoding_time += round(time_after_encoding - time_before_encoding, 3)
         total_decoding_time += round(time_after_decoding - time_after_encoding, 3)
-
+        
+        # getting next batch (which includes tokenization)
+        time_before_tokenizing = time.time()
         batch = tokenized_test.next_batch()
+        time_after_tokenizing = time.time()
+
+        total_tokenization_time += round(time_after_tokenizing - time_before_tokenizing, 3)
   time_after_translating = time.time()
 
 
@@ -198,7 +205,7 @@ def get_full_translation_time(experiment_dir, compressed_test, num_lines=-1):
       "experiment_dir": experiment_number,
       "num_lines": 'all' if num_lines == -1 else num_lines,
       "compression_time": round(time_after_compressing - time_after_setting_up_compressed, 3),
-      "tokenization_time": round(time_after_tokenizing - time_before_tokenizing, 3),
+      "tokenization_time": total_tokenization_time + round(time_after_tokenizing_setup - time_before_tokenizing_setup, 3),
       "encoding_time": total_encoding_time,
       "decoding_time": total_decoding_time,
       "translation_time": round(time_after_translating - time_after_compressing, 3),
@@ -210,7 +217,7 @@ def get_full_translation_time(experiment_dir, compressed_test, num_lines=-1):
       "experiment_type": src_tokenizer,
       "experiment_dir": experiment_number,
       "num_lines": 'all' if num_lines == -1 else num_lines,
-      "tokenization_time": round(time_after_tokenizing - time_before_tokenizing, 3),
+      "tokenization_time": total_tokenization_time + round(time_after_tokenizing_setup - time_before_tokenizing_setup, 3),
       "encoding_time": total_encoding_time,
       "decoding_time": total_decoding_time,
       "translation_time": round(time_after_translating - time_after_setting_up_non_compressed, 3),
@@ -225,14 +232,14 @@ def get_full_translation_time(experiment_dir, compressed_test, num_lines=-1):
 if __name__ == "__main__":
 
   # SPECIFICATIONS OF WHAT WE ARE TESTING
-  num_lines = 640
-  num_iterations = 1
+  num_lines = -1
+  num_iterations = 100
   experiments = [
     ("/mnt/storage/swexler/thesis-wexler/models/french-training-v126/", False, num_lines, "Byte"),
     ("/mnt/storage/swexler/thesis-wexler/models/french-training-v110/", True, num_lines, "Compressed-57.5"),
     ("/mnt/storage/swexler/thesis-wexler/models/french-training-v109/", True, num_lines, "Compressed-44.7"),
     ("/mnt/storage/swexler/thesis-wexler/models/french-training-v117/", True, num_lines, "Compressed-32.1"),
-    ("/mnt/storage/swexler/thesis-wexler/models/french-training-v82/", False, num_lines, "BPE"),
+    ("/mnt/storage/swexler/thesis-wexler/models/french-training-v140/", False, num_lines, "BPE"),
   ]
 
   # MAKING DATA STRUCTURES WHERE RESULTS WILL BE STORED
@@ -267,24 +274,46 @@ if __name__ == "__main__":
     print()
     print()
 
-  # CALCULATE AND DISPLAY AVERAGES ACROSS ALL ITERATIONS
-  def get_average_time(my_dict):
-    return {k: round(sum(v) / len(v), 3) for k, v in my_dict.items()}
+  all_results = { # segments we are timing
+    "end_to_end": results_end_to_end, # k = experiment type, v = list of times
+    "translation": results_translation,
+    "compression": results_compression,
+    "tokenization": results_tokenization,
+    "encoding": results_encoding,
+    "decoding": results_decoding,
+  }
 
-  averages_end_to_end = get_average_time(results_end_to_end)
-  averages_translation = get_average_time(results_translation)
-  averages_compression = get_average_time(results_compression)
-  averages_tokenization = get_average_time(results_tokenization)
-  averages_encoding = get_average_time(results_encoding)
-  averages_decoding = get_average_time(results_decoding)
+  # get stats on a list of times
+  def summarize(times):
+    times = sorted(times)
 
-  def sort_by_key(my_dict): # standardize order of (k,v) pairs when printing results
-    return dict(sorted(my_dict.items()))
+    # the statistics library interpolates times and I want recorded times
+    def nearest_percentile(times, p):
+      idx = round(p * (len(times) - 1))
+      return sorted(times)[idx]
+    return {
+        "mean": round(stats.mean(times), 3),
+        "median": round(stats.median(times), 3),
+        "sd": round(stats.stdev(times), 3) if len(times) > 1 else 0,
+        "min": round(times[0], 3),
+        "max": round(times[-1], 3),
+        "p25": round(nearest_percentile(times, 0.25), 3),
+        "p75": round(nearest_percentile(times, 0.75), 3),
+  }
 
-  print(f"Avg end-to-end time: {sort_by_key(averages_end_to_end)}")
-  print(f"Avg tokenization time: {sort_by_key(averages_tokenization)}")
-  print(f"Avg translation time (incl. tokenization): {sort_by_key(averages_translation)}")
-  print(f"Avg compression time: {sort_by_key(averages_compression)}")
-  print(f"Avg encoding time: {sort_by_key(averages_encoding)}")
-  print(f"Avg decoding time: {sort_by_key(averages_decoding)}")
+  # use summarize() to get stats on each segment in each experiment type
+  # summary is formatted as {segment, {experiment, {statistic, value}}}
+  summary = {
+    segment: {k: summarize(v) for k, v in experiments.items()}
+    for segment, experiments in all_results.items()
+  }
 
+  # ensure experiments are listed in the same order each time
+  def sort_dict(d):
+    return dict(sorted(d.items()))
+
+  # print aggregates in readable format
+  for metric, experiments in summary.items():
+      print(f"\n{metric.upper()}")
+      for exp, stats_dict in sort_dict(experiments).items():
+          print(f"{exp}: {stats_dict}")
