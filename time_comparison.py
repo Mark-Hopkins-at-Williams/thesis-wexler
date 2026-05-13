@@ -120,7 +120,8 @@ def get_full_translation_time(experiment_dir, compressed_test, num_lines=-1):
         "date_compressed": "4_26_26",
         "autocomplete_mode": parts[-1]
     }
-    
+
+    torch.cuda.synchronize()
     time_after_setting_up_compressed = time.time() # =================TIMER STARTS===========================
 
     # ACTUALLY COMPRESS
@@ -135,6 +136,7 @@ def get_full_translation_time(experiment_dir, compressed_test, num_lines=-1):
         output_style=specifications["output_style"],
         autocomplete_mode=specifications["autocomplete_mode"],
     )
+    torch.cuda.synchronize()
     time_after_compressing = time.time()
 
 
@@ -173,28 +175,37 @@ def get_full_translation_time(experiment_dir, compressed_test, num_lines=-1):
         y = y.to(model.device)
 
         # encoding
+        torch.cuda.synchronize()
         time_before_encoding = time.time()
         encoder_outputs = model.get_encoder()(**x)
+        torch.cuda.synchronize()
         time_after_encoding = time.time()
 
+        print(x["input_ids"].shape, x["attention_mask"].sum())
+
         # decoding
-        model(
-            encoder_outputs=encoder_outputs,
-            attention_mask=x["attention_mask"],
-            labels=y.input_ids
+        model.generate(
+          encoder_outputs=encoder_outputs,
+          attention_mask=x["attention_mask"],
+          forced_bos_token_id=tgt_tokenizer.get_special_tokens()["fra_Latn"],
+          max_new_tokens=128,
+          num_beams=1,
+          do_sample=False,
         )
+        torch.cuda.synchronize()
         time_after_decoding = time.time()
 
         # adding this batch's times to total time
-        total_encoding_time += round(time_after_encoding - time_before_encoding, 3)
-        total_decoding_time += round(time_after_decoding - time_after_encoding, 3)
+        total_encoding_time += time_after_encoding - time_before_encoding
+        total_decoding_time += time_after_decoding - time_after_encoding
         
         # getting next batch (which includes tokenization)
         time_before_tokenizing = time.time()
         batch = tokenized_test.next_batch()
         time_after_tokenizing = time.time()
 
-        total_tokenization_time += round(time_after_tokenizing - time_before_tokenizing, 3)
+        total_tokenization_time += time_after_tokenizing - time_before_tokenizing
+  torch.cuda.synchronize()
   time_after_translating = time.time()
 
 
@@ -205,9 +216,9 @@ def get_full_translation_time(experiment_dir, compressed_test, num_lines=-1):
       "experiment_dir": experiment_number,
       "num_lines": 'all' if num_lines == -1 else num_lines,
       "compression_time": round(time_after_compressing - time_after_setting_up_compressed, 3),
-      "tokenization_time": total_tokenization_time + round(time_after_tokenizing_setup - time_before_tokenizing_setup, 3),
-      "encoding_time": total_encoding_time,
-      "decoding_time": total_decoding_time,
+      "tokenization_time": round(total_tokenization_time + time_after_tokenizing_setup - time_before_tokenizing_setup, 3),
+      "encoding_time": round(total_encoding_time, 3),
+      "decoding_time": round(total_decoding_time, 3),
       "translation_time": round(time_after_translating - time_after_compressing, 3),
       "end_to_end_time": round(time_after_translating - time_after_setting_up_compressed, 3)
     }
@@ -217,13 +228,12 @@ def get_full_translation_time(experiment_dir, compressed_test, num_lines=-1):
       "experiment_type": src_tokenizer,
       "experiment_dir": experiment_number,
       "num_lines": 'all' if num_lines == -1 else num_lines,
-      "tokenization_time": total_tokenization_time + round(time_after_tokenizing_setup - time_before_tokenizing_setup, 3),
-      "encoding_time": total_encoding_time,
-      "decoding_time": total_decoding_time,
+      "tokenization_time": round(total_tokenization_time + time_after_tokenizing_setup - time_before_tokenizing_setup, 3),
+      "encoding_time": round(total_encoding_time, 3),
+      "decoding_time": round(total_decoding_time, 3),
       "translation_time": round(time_after_translating - time_after_setting_up_non_compressed, 3),
       "end_to_end_time": round(time_after_translating - time_after_setting_up_non_compressed, 3)
     }
-  print("------")
 
 
 
@@ -232,8 +242,8 @@ def get_full_translation_time(experiment_dir, compressed_test, num_lines=-1):
 if __name__ == "__main__":
 
   # SPECIFICATIONS OF WHAT WE ARE TESTING
-  num_lines = -1
-  num_iterations = 100
+  num_lines = 640
+  num_iterations = 1
   experiments = [
     ("/mnt/storage/swexler/thesis-wexler/models/french-training-v126/", False, num_lines, "Byte"),
     ("/mnt/storage/swexler/thesis-wexler/models/french-training-v110/", True, num_lines, "Compressed-57.5"),
@@ -261,7 +271,7 @@ if __name__ == "__main__":
     for (exp_dir, compressed_test_local, num_lines_local, label) in shuffled_experiments:
       result = get_full_translation_time(exp_dir, compressed_test=compressed_test_local, num_lines=num_lines_local)
       print(label, result)
-
+      
       # add time to that experiment's list of times
       results_end_to_end[label].append(result["end_to_end_time"])
       results_translation[label].append(result["translation_time"])
