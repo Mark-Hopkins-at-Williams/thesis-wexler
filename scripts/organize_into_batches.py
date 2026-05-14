@@ -55,6 +55,13 @@ def reorganize(batch_size, root_dir, split, output_dir, user_tokenizer, max_len)
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     lengths = []
 
+    # check files have same len
+    with open(root_dir / eng_file) as f:
+      eng_len = sum(1 for _ in f)
+    with open(root_dir / fr_file) as f:
+        fr_len = sum(1 for _ in f)
+    assert eng_len == fr_len, f"File length mismatch: {eng_len} eng lines vs {fr_len} fr lines"
+
     # in case length should be calculated in a more specific manner
     if user_tokenizer == "sentinel":
         tokenizer = SentinelTokenizer()
