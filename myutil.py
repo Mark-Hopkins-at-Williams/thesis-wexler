@@ -26,6 +26,13 @@ def prepare_model_for_finetuning(ft_params):
         print("loaded pretrained model")
     else:
         model_config = AutoConfig.from_pretrained(ft_params.base_model)
+
+        model_config.d_model = ft_params.d_model
+        model_config.encoder_ffn_dim = ft_params.d_ff
+        model_config.decoder_ffn_dim = ft_params.d_ff
+        model_config.encoder_layers = ft_params.encoder_layers
+        model_config.decoder_layers = ft_params.decoder_layers
+
         model = AutoModelForSeq2SeqLM.from_config(model_config)
         print("loaded architecture only")
     if hasattr(model.config, "max_length"):  # this should be in a GenerationConfig

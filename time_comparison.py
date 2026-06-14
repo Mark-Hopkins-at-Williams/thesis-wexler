@@ -242,7 +242,7 @@ def get_full_translation_time(experiment_dir, compressed_test, num_lines=-1):
 if __name__ == "__main__":
 
   # SPECIFICATIONS OF WHAT WE ARE TESTING
-  num_lines = 640
+  num_lines = 640 # -1 does all lines
   num_iterations = 1
   experiments = [
     ("/mnt/storage/swexler/thesis-wexler/models/french-training-v126/", False, num_lines, "Byte"),

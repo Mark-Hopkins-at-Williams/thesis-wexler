@@ -489,7 +489,7 @@ def tokenize(
     model.load_state_dict(checkpoint["model_state_dict"])
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
-    print("BEGINNING COMPRESSION")
+    print("--beginning compression")
 
     total_lines = get_total_lines(loader.dataset.filepath)
     total_batches = math.ceil(total_lines / loader.batch_size)
@@ -584,93 +584,93 @@ if __name__ == "__main__":
     top_pred = 0.3, 0.5, 0.7
     """
 
-    # specifications = {
-    #     "source_data": os.path.dirname(CORPORA["train"]),
-    #     "compression_model": "/mnt/storage/swexler/thesis-wexler/models/autocomplete-v5",
-    #     "prediction_threshold": 0.5,  # float within (0,1)
-    #     "prediction_mode": "top_pred",  # margin or top_pred (absolute)
-    #     "output_style": "short",  # short or long
-    #     "date_compressed": "3_15_26",
-    #     "autocomplete_mode": "two_types_english_chars",
-    # }
-    # desired_output_dir = (
-    #     "/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_"
-    #     + specifications["date_compressed"]
-    #     + "-"
-    #     + str(specifications["prediction_threshold"])
-    #     + "-"
-    #     + specifications["prediction_mode"]
-    #     + "-"
-    #     + specifications["autocomplete_mode"]
-    # )
+    specifications = {
+        "source_data": os.path.dirname(CORPORA["train"]),
+        "compression_model": "/mnt/storage/swexler/thesis-wexler/models/autocomplete-v5",
+        "prediction_threshold": 0.3,  # float within (0,1)
+        "prediction_mode": "top_pred",  # margin or top_pred (absolute)
+        "output_style": "short",  # short or long
+        "date_compressed": "4_21_26",
+        "autocomplete_mode": "no_autocomplete_chars"
+    }
+    desired_output_dir = (
+        "/mnt/storage/swexler/thesis-wexler/examples/english-data-compressed_"
+        + specifications["date_compressed"]
+        + "-"
+        + str(specifications["prediction_threshold"])
+        + "-"
+        + specifications["prediction_mode"]
+        + "-"
+        + specifications["autocomplete_mode"]
+    )
 
-    # ## Making json with how we compressed the files
-    # os.makedirs(desired_output_dir, exist_ok=True)
-    # documentation_path = os.path.join(desired_output_dir, "specs.json")
-    # with open(documentation_path, "w") as f:
-    #     json.dump(specifications, f, indent=4)
+    ## Making json with how we compressed the files
+    os.makedirs(desired_output_dir, exist_ok=True)
+    documentation_path = os.path.join(desired_output_dir, "specs.json")
+    with open(documentation_path, "w") as f:
+        json.dump(specifications, f, indent=4)
 
-    # print("BEGINNING TOKENIZATION")
-    # tokenize(
-    #     model,
-    #     val_loader,
-    #     model_dir=specifications["compression_model"],
-    #     output_dir=desired_output_dir,
-    #     examples_type="dev",
-    #     prediction_threshold=specifications["prediction_threshold"],
-    #     prediction_mode=specifications["prediction_mode"],
-    #     output_style=specifications["output_style"],
-    #     autocomplete_mode=specifications["autocomplete_mode"],
-    # )
-    # tokenize(
-    #     model,
-    #     test_loader,
-    #     model_dir=specifications["compression_model"],
-    #     output_dir=desired_output_dir,
-    #     examples_type="test",
-    #     prediction_threshold=specifications["prediction_threshold"],
-    #     prediction_mode=specifications["prediction_mode"],
-    #     output_style=specifications["output_style"],
-    #     autocomplete_mode=specifications["autocomplete_mode"],
-    # )
+    print("BEGINNING TOKENIZATION")
+    tokenize(
+        model,
+        val_loader,
+        model_dir=specifications["compression_model"],
+        output_dir=desired_output_dir,
+        examples_type="dev",
+        prediction_threshold=specifications["prediction_threshold"],
+        prediction_mode=specifications["prediction_mode"],
+        output_style=specifications["output_style"],
+        autocomplete_mode=specifications["autocomplete_mode"],
+    )
+    tokenize(
+        model,
+        test_loader,
+        model_dir=specifications["compression_model"],
+        output_dir=desired_output_dir,
+        examples_type="test",
+        prediction_threshold=specifications["prediction_threshold"],
+        prediction_mode=specifications["prediction_mode"],
+        output_style=specifications["output_style"],
+        autocomplete_mode=specifications["autocomplete_mode"],
+    )
 
-    # tokenize(
-    #     model,
-    #     train_loader,
-    #     model_dir=specifications["compression_model"],
-    #     output_dir=desired_output_dir,
-    #     examples_type="train",
-    #     prediction_threshold=specifications["prediction_threshold"],
-    #     prediction_mode=specifications["prediction_mode"],
-    #     output_style=specifications["output_style"],
-    #     autocomplete_mode=specifications["autocomplete_mode"]
-    # )
+    tokenize(
+        model,
+        train_loader,
+        model_dir=specifications["compression_model"],
+        output_dir=desired_output_dir,
+        examples_type="train",
+        prediction_threshold=specifications["prediction_threshold"],
+        prediction_mode=specifications["prediction_mode"],
+        output_style=specifications["output_style"],
+        autocomplete_mode=specifications["autocomplete_mode"]
+    )
 
     """
     BELOW HERE IS DUMMY DATASET 
     """
     # ONE CHAR DUMMY
-    dummy_dataset = FileBasedLMData(
-        "examples/one-char-examining/one-char.eng",
-        max_length=1024,
-    )
-    dummy_loader = DataLoader(
-        dummy_dataset,
-        batch_size=3,
-        num_workers=0,
-        collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
-    )
-    tokenize(
-        model,
-        dummy_loader,
-        model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v5",
-        output_dir="/mnt/storage/swexler/thesis-wexler/examples/one-char-examining",
-        examples_type="dummy",
-        prediction_threshold=0.3,
-        output_style="long",
-        prediction_mode="top_pred",
-        autocomplete_mode="default"
-    )
+    # dummy_dataset = FileBasedLMData(
+    #     "examples/one-char-examining/one-char.eng",
+    #     max_length=1024,
+    # )
+    # dummy_loader = DataLoader(
+    #     dummy_dataset,
+    #     batch_size=3,
+    #     num_workers=0,
+    #     collate_fn=lambda batch: collate_causal_lm(batch, pad_token_id=0),
+    # )
+    # tokenize(
+    #     model,
+    #     dummy_loader,
+    #     model_dir="/mnt/storage/swexler/thesis-wexler/models/autocomplete-v5",
+    #     output_dir="/mnt/storage/swexler/thesis-wexler/examples/one-char-examining",
+    #     examples_type="dummy",
+    #     prediction_threshold=0.3,
+    #     output_style="short",
+    #     prediction_mode="top_pred",
+    #     autocomplete_mode="default"
+    # )
 
     """ 
     modes = store_num_chars_autocompleted

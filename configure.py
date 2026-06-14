@@ -26,6 +26,10 @@ class FinetuningParameters:
     gradient_accumulation_steps: int
     max_grad_norm: float
     dev_batches: int
+    d_model: int
+    d_ff: int
+    encoder_layers: int
+    decoder_layers: int
 
 
 def read_finetuning_params(config):
@@ -48,6 +52,10 @@ def read_finetuning_params(config):
         gradient_accumulation_steps=params.get("gradient_accumulation_steps", 1),
         max_grad_norm=params.get("max_grad_norm", 1.0),
         dev_batches=params.get("dev_batches", 100),
+        d_model=params.get("d_model", 1024),
+        d_ff=params.get("d_ff", 4096),
+        encoder_layers=params.get("encoder_layers", 12),
+        decoder_layers=params.get("decoder_layers", 12)
     )
     return f_params
 

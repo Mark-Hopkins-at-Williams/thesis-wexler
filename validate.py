@@ -93,7 +93,7 @@ def evaluate_experiment(experiment_dir, suffix=""):
     lang_codes = harvest_language_codes(config)
     src_tokenizer, tgt_tokenizer = initialize_tokenizers(ft_params)
     pmap = load_permutation_map(Path(experiment_dir) / "permutations.json")
-    test_data = MixtureOfBitexts.create_from_config(config, "test", only_once_thru=True)
+    test_data = MixtureOfBitexts.create_from_config(config, "test", only_once_thru=True, use_small_batch_size=True)
     tokenized_test = TokenizedMixtureOfBitexts(
         test_data,
         src_tokenizer,
@@ -113,7 +113,7 @@ def evaluate_experiment(experiment_dir, suffix=""):
 
     ## NICELY PACKAGE TEST DATASET (REFERENCE TRANSLATIONS)
     logger(f"Collating reference translations")
-    test_data = MixtureOfBitexts.create_from_config(config, "test", only_once_thru=True)
+    test_data = MixtureOfBitexts.create_from_config(config, "test", only_once_thru=True, use_small_batch_size=True)
     references = dict()
     batch = test_data.next_batch()
     while batch is not None:

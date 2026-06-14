@@ -135,7 +135,7 @@ class MixtureOfBitexts:
 
     @staticmethod
     def create_from_config(
-        config: dict, split: str, only_once_thru: bool = False
+        config: dict, split: str, only_once_thru: bool = False, use_small_batch_size: bool = False
     ) -> "MixtureOfBitexts":
         all_corpora = dict()
         for corpus in config["corpora"]:
@@ -152,6 +152,13 @@ class MixtureOfBitexts:
             )
             bitexts[(src, tgt)] = Bitext(all_corpora[src], all_corpora[tgt], lines)
         params = config["finetuning_parameters"]
+        if use_small_batch_size == True:
+          return MixtureOfBitexts(
+            bitexts,
+            16,
+            sampling_probs=None,
+            only_once_thru=only_once_thru,
+          )
         return MixtureOfBitexts(
             bitexts,
             params["batch_size"],

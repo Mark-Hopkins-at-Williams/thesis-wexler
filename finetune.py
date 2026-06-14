@@ -21,6 +21,7 @@ from tqdm import tqdm
 from transformers import Adafactor
 from transformers import get_constant_schedule_with_warmup
 from validate import evaluate_experiment
+from collections import Counter
 
 matplotlib.use("Agg")
 
@@ -96,10 +97,14 @@ def finetune(model, train_data, dev_data, model_dir, ft_params):
 
     model.train()
 
+    lens_that_oom = []
+    all_lens = []
+
     # TRAINING LOOP
     for step in tqdm(range(1, ft_params.num_training_steps + 1)):
         try:
             x, y, _, _ = train_data.next_batch()
+            all_lens.append(x["input_ids"].shape[1])
             x = x.to(model.device)
             y = y.to(model.device)
             with torch.amp.autocast("cuda", enabled=use_amp):
@@ -120,6 +125,7 @@ def finetune(model, train_data, dev_data, model_dir, ft_params):
         except RuntimeError as e:
             if "out of memory" in str(e).lower():
                 logger("GPU OOM during training step. Skipping batch.", to_stderr=True)
+                lens_that_oom.append(x["input_ids"].shape[1])
                 optimizer.zero_grad(set_to_none=True)
                 torch.cuda.empty_cache()
                 torch.cuda.ipc_collect()
@@ -180,7 +186,12 @@ def finetune(model, train_data, dev_data, model_dir, ft_params):
         if step % 100000 == 0:
             step_str = "-" + str((step // 1000)) + "k"
             evaluate_experiment(model_dir, step_str)
-        
+    counts_all = dict(Counter(all_lens))
+    counts_oom = dict(Counter(lens_that_oom))
+    ratio = {k: counts_oom.get(k, 0) / counts_all[k] for k in counts_all} 
+    # dict where key = k (line length of batch) and value = % of times batch w/ length k OOM'd
+    print("pct of times that OOM")
+    print(sorted(ratio.items()))
 
 
 def main():
@@ -206,7 +217,7 @@ def main():
     train_data = MixtureOfBitexts.create_from_config(
         config, "train", only_once_thru=False
     )
-    dev_data = MixtureOfBitexts.create_from_config(config, "dev", only_once_thru=False)
+    dev_data = MixtureOfBitexts.create_from_config(config, "dev", only_once_thru=False, use_small_batch_size=True)
     tokenized_train = TokenizedMixtureOfBitexts(
         train_data,
         src_tokenizer,
